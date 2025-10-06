@@ -16,7 +16,8 @@ import { useToast } from "@/hooks/use-toast";
 
 interface TransactionFormProps {
   onClose: () => void;
-  onSuccess?: () => void;
+  // onSuccess may receive the newly created transaction id
+  onSuccess?: (id?: string) => void;
 }
 
 export const TransactionForm = ({ onClose, onSuccess }: TransactionFormProps) => {
@@ -58,7 +59,7 @@ export const TransactionForm = ({ onClose, onSuccess }: TransactionFormProps) =>
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Not authenticated");
 
-      const { error } = await supabase.from("transactions").insert({
+      const { data: inserted, error } = await supabase.from("transactions").insert({
         user_id: user.id,
         date: formData.date,
         category: formData.category,
@@ -69,12 +70,13 @@ export const TransactionForm = ({ onClose, onSuccess }: TransactionFormProps) =>
         net_income: type === "income" ? parseFloat(formData.netIncome) || 0 : 0,
         tax_paid: type === "income" ? parseFloat(formData.taxPaid) || 0 : 0,
         expense: type === "expense" ? parseFloat(formData.expense) || 0 : 0,
-      });
+      }).select("id");
 
       if (error) throw error;
+      const newId = Array.isArray(inserted) && inserted[0] ? inserted[0].id : undefined;
 
-      toast({ title: "Transaction added successfully!" });
-      onSuccess?.();
+  toast({ title: "Transaction added successfully!" });
+  onSuccess?.(newId);
       onClose();
     } catch (error: any) {
       toast({

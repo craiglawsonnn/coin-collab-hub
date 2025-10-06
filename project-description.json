@@ -1,0 +1,315 @@
+{
+  "project": {
+    "name": "coin-collab-hub",
+    "description": "A small Vite + React + TypeScript budget tracking front-end scaffold using shadcn-ui components and Supabase for persistence. Provides a dashboard with balance overview, monthly breakdown, recent transactions and a modal form to add transactions.",
+    "owner": "craiglawsonnn",
+    "repo": {
+      "name": "coin-collab-hub",
+      "defaultBranch": "main"
+    },
+    "created": "unknown",
+    "lastScanned": "2025-10-06T00:00:00Z",
+    "technology": {
+      "language": "TypeScript",
+      "framework": "React 18 (Vite)",
+      "ui": "shadcn / Radix UI primitives",
+      "styling": "Tailwind CSS",
+      "stateQuery": "@tanstack/react-query",
+      "auth/db": "Supabase (supabase-js v2)",
+      "charting": "recharts (present in dependencies)",
+      "date": "date-fns"
+    },
+    "build": {
+      "tool": "vite",
+      "scripts": {
+        "dev": "vite",
+        "build": "vite build",
+        "build:dev": "vite build --mode development",
+        "preview": "vite preview",
+        "lint": "eslint ."
+      }
+    },
+    "env": {
+      "required": ["VITE_SUPABASE_URL", "VITE_SUPABASE_PUBLISHABLE_KEY"],
+      "optional": [],
+      "notes": "Supabase client is created from VITE_* env variables in src/integrations/supabase/client.ts"
+    },
+    "dependencies": {
+      "react": "^18.3.1",
+      "react-dom": "^18.3.1",
+      "@supabase/supabase-js": "^2.58.0",
+      "@tanstack/react-query": "^5.83.0",
+      "tailwindcss": "^3.4.17",
+      "zod": "^3.25.76",
+      "date-fns": "^3.6.0",
+      "lucide-react": "^0.462.0",
+      "recharts": "^2.15.4",
+      "sonner": "^1.7.4"
+    },
+    "devDependencies": {
+      "vite": "^5.4.19",
+      "typescript": "^5.8.3",
+      "@vitejs/plugin-react-swc": "^3.11.0",
+      "eslint": "^9.32.0",
+      "tailwindcss-animate": "^1.0.7"
+    }
+  },
+  "structure": {
+    "topLevelFiles": [
+      "package.json",
+      "vite.config.ts",
+      "tsconfig.json",
+      "tailwind.config.ts",
+      "README.md",
+      "public/*"
+    ],
+    "src": {
+      "entry": "src/main.tsx",
+      "app": "src/App.tsx",
+      "styles": ["src/index.css", "src/App.css"],
+      "pages": "src/pages",
+      "components": "src/components",
+      "lib": "src/lib",
+      "integrations": "src/integrations"
+    }
+  },
+  "routes": [
+    {
+      "path": "/",
+      "element": "src/pages/Index.tsx -> Dashboard",
+      "description": "Root route renders the Dashboard component which composes the main UI"
+    },
+    {
+      "path": "*",
+      "element": "src/pages/NotFound.tsx",
+      "description": "Catch-all 404 route"
+    }
+  ],
+  "components": {
+    "Dashboard (src/pages/Dashboard.tsx)": {
+      "type": "page / container",
+      "responsibilities": [
+        "Render header with project title and Add Transaction button",
+        "Show three overview cards: Current Balance, Monthly Income, Monthly Expenses",
+        "Compose MonthlySummary and TransactionList components",
+        "Open/close TransactionForm modal state"
+      ],
+      "state": {
+        "showTransactionForm": "boolean (local UI state)"
+      },
+      "mockData": {
+        "currentBalance": 2456.32,
+        "monthlyIncome": 3500.0,
+        "monthlyExpenses": 1543.68
+      },
+      "interactions": [
+        "on Add Transaction button click -> set showTransactionForm = true",
+        "passing onClose callback to TransactionForm to set showTransactionForm false"
+      ],
+      "contract": {
+        "inputs": "none (UI only)",
+        "outputs": "renders components, toggles modal",
+        "errors": "none; network/data fetching unimplemented (mocked)"
+      }
+    },
+    "TransactionList (src/components/TransactionList.tsx)": {
+      "type": "presentational component",
+      "responsibilities": [
+        "Render a list of recent transactions",
+        "Show icon (income/expense), description, category badge, account and formatted date",
+        "Format amounts with euro symbol and 2 decimals"
+      ],
+      "dataShape": {
+        "Transaction": {
+          "id": "string",
+          "date": "ISO date string (YYYY-MM-DD)",
+          "category": "string",
+          "description": "string",
+          "account": "string",
+          "amount": "number (positive for income, negative for expense)",
+          "type": "'income'|'expense'"
+        }
+      },
+      "mockData": "array of transactions (4 items) inside component",
+      "props": {},
+      "sideEffects": "none",
+      "contract": {
+        "inputs": "(optionally) an array of Transaction objects - currently uses internal mock array",
+        "outputs": "JSX list of rows",
+        "errorModes": "if transactions array is empty -> renders empty space (no special fallback)"
+      },
+      "suggestedImprovements": [
+        "Accept transactions as a prop or fetch using react-query",
+        "Add skeleton / empty state when no transactions",
+        "Add click handlers for edit/delete",
+        "Add pagination or infinite scroll for larger datasets"
+      ]
+    },
+    "TransactionForm (src/components/TransactionForm.tsx)": {
+      "type": "modal form component",
+      "responsibilities": [
+        "Collect transaction data (date, category, description, account, payment method, amount)",
+        "Toggle between income/expense form states",
+        "Render inputs and selects with accessible labels",
+        "Call onClose when cancel or X button pressed",
+        "Submit form (currently type=submit but no handler attached)"
+      ],
+      "state": {
+        "type": "'income'|'expense' (local state)"
+      },
+      "formFields": {
+        "common": ["date","category","description","account","payment method"],
+        "expense": ["amount"],
+        "income": ["gross","tax","net"]
+      },
+      "props": {
+        "onClose": "() => void (required)"
+      },
+      "validation": "none implemented (UI only). react-hook-form and zod are present in deps and would be appropriate to add",
+      "contract": {
+        "inputs": {
+          "onClose": "function to close the modal"
+        },
+        "outputs": "Currently no API call; expected to emit a transaction object on submit",
+        "errorModes": "no validation - invalid values possible; no network handling"
+      },
+      "suggestedImprovements": [
+        "Integrate react-hook-form + zod schema for validation",
+        "Wire up submit handler to call Supabase insert via a transactions service using react-query",
+        "Disable submit while network request is pending, show toast on success/error"
+      ]
+    },
+    "MonthlySummary (src/components/MonthlySummary.tsx)": {
+      "type": "presentational component",
+      "responsibilities": [
+        "Render a breakdown of expense categories with amounts and a progress bar per category",
+        "Calculate total expenses and percentages from category data"
+      ],
+      "dataShape": {
+        "CategoryBreakdownItem": {
+          "category": "string",
+          "amount": "number",
+          "color": "string (tailwind class)"
+        }
+      },
+      "mockData": "array of categories inside component",
+      "props": {},
+      "contract": {
+        "inputs": "(optional) categoryBreakdown array",
+        "outputs": "rendered progress bars and total expense amount",
+        "errorModes": "division by zero handled implicitly (if totalExpenses=0 -> percentage=NaN in current code)"
+      },
+      "edgeCases": [
+        "If totalExpenses equals 0 then percent calculations should guard against division by zero",
+        "Very small or very large numbers should be clamped or formatted"
+      ]
+    },
+    "UI primitives (src/components/ui/*)": {
+      "description": "A folder of small UI wrappers and local exports for shadcn / Radix primitives (Button, Input, Card, Badge, Select, Toaster, Tooltip, etc). These are composable primitives used across the app.",
+      "notable": ["toaster", "sonner", "tooltip", "button", "card", "select"]
+    }
+  },
+  "integrations": {
+    "supabase": {
+      "client": "src/integrations/supabase/client.ts",
+      "behavior": "createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, { auth: { storage: localStorage, persistSession: true, autoRefreshToken: true } })",
+      "envVars": ["VITE_SUPABASE_URL","VITE_SUPABASE_PUBLISHABLE_KEY"],
+      "notes": "Database types are referenced from 'src/integrations/supabase/types.ts' (file present in repo). The current client is configured for browser localStorage auth persistence. Use server-only keys on server-side code only; client publishable key is intended for browser usage."
+    }
+  },
+  "lib": {
+    "utils.ts": {
+      "functions": {
+        "cn(...inputs)": {
+          "description": "Small helper wrapping clsx + tailwind-merge to join and merge Tailwind class strings safely.",
+          "inputs": "...ClassValue[]",
+          "outputs": "string - merged className",
+          "errors": "none"
+        }
+      }
+    }
+  },
+  "dataModel": {
+    "Transaction": {
+      "id": "string (uuid or db id)",
+      "date": "string (ISO date)",
+      "category": "string",
+      "description": "string",
+      "account": "string",
+      "amount": "number (positive for income, negative for expense or separate type field)",
+      "type": "'income'|'expense'",
+      "payment_method": "string?",
+      "created_at": "string?",
+      "updated_at": "string?"
+    },
+    "MonthlySummary": {
+      "categoryBreakdown": "[{ category: string, amount: number }]",
+      "totalExpenses": "number",
+      "computedFields": ["percentage per category"]
+    }
+  },
+  "suggestedBackendAPIs": {
+    "listTransactions": {
+      "path": "/api/transactions",
+      "method": "GET",
+      "queryParams": ["limit","offset","fromDate","toDate","account","category"],
+      "response": "{ data: Transaction[] }",
+      "errorModes": ["network","auth","invalid-query-params"]
+    },
+    "createTransaction": {
+      "path": "/api/transactions",
+      "method": "POST",
+      "body": "Transaction (without id and timestamps)",
+      "response": "{ data: Transaction }",
+      "errorModes": ["validation","db-error","auth"]
+    },
+    "updateTransaction": {
+      "path": "/api/transactions/:id",
+      "method": "PUT",
+      "body": "Partial<Transaction>",
+      "response": "{ data: Transaction }"
+    },
+    "deleteTransaction": {
+      "path": "/api/transactions/:id",
+      "method": "DELETE",
+      "response": "{ success: true }"
+    },
+    "monthlySummary": {
+      "path": "/api/summary/monthly",
+      "method": "GET",
+      "queryParams": ["year","month","account"],
+      "response": "{ data: { categoryBreakdown: { category: string, amount: number }[], totalExpenses: number, totalIncome: number } }"
+    }
+  },
+  "qa_and_tests": {
+    "current": "no unit tests found in repo",
+    "recommended": [
+      "Add react-testing-library unit tests for components (TransactionList, MonthlySummary, TransactionForm)",
+      "Add small integration tests for Supabase integration using MSW (mocking Supabase responses) or a local Supabase test instance",
+      "Add lint and typecheck in CI (npm run lint, tsc --noEmit)"
+    ],
+    "testCases (suggested)": {
+      "TransactionList": [
+        { "name": "renders list items from transactions array", "input": "transactions mock", "expected": "rendered rows with formatted amounts" },
+        { "name": "empty state", "input": "[]", "expected": "shows fallback UI or message" }
+      ],
+      "TransactionForm": [
+        { "name": "toggles income/expense fields", "input": "click income, click expense", "expected": "fields shown/hidden accordingly" },
+        { "name": "validates required fields", "input": "submit empty form", "expected": "shows validation errors" }
+      ]
+    }
+  },
+  "developerNotes": {
+    "assumptions": [
+      "Most data is currently mocked in components; there is no react-query usage or supabase queries implemented for transactions yet",
+      "UI folder exports are used as wrappers around Radix+Tailwind primitives; they are expected to be thin components",
+      "Database type file exists at src/integrations/supabase/types.ts (referenced in client.ts)"
+    ],
+    "nextSteps": [
+      "1) Decide on the canonical Transaction DB schema and implement a service module (src/services/transactions.ts) that uses supabase client and react-query hooks (useTransactions, useCreateTransaction, useUpdateTransaction, useDeleteTransaction)",
+      "2) Wire TransactionList and MonthlySummary to react-query remote data instead of internal mocks",
+      "3) Add form validation using react-hook-form + zod in TransactionForm and connect submissions to useCreateTransaction",
+      "4) Add tests and CI lint/type checks"
+    ]
+  }
+}

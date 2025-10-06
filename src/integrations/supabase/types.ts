@@ -19,6 +19,7 @@ export type Database = {
           created_at: string | null
           email: string | null
           full_name: string | null
+          preferences: Json | null
           id: string
           updated_at: string | null
         }
@@ -26,6 +27,7 @@ export type Database = {
           created_at?: string | null
           email?: string | null
           full_name?: string | null
+          preferences?: Json | null
           id: string
           updated_at?: string | null
         }
@@ -33,6 +35,7 @@ export type Database = {
           created_at?: string | null
           email?: string | null
           full_name?: string | null
+          preferences?: Json | null
           id?: string
           updated_at?: string | null
         }
@@ -86,6 +89,30 @@ export type Database = {
           tax_paid?: number | null
           updated_at?: string | null
           user_id?: string
+        }
+        Relationships: []
+      }
+      dashboard_shares: {
+        Row: {
+          id: string
+          dashboard_id: string
+          user_id: string
+          role: string
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          dashboard_id: string
+          user_id: string
+          role?: string
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          dashboard_id?: string
+          user_id?: string
+          role?: string
+          created_at?: string | null
         }
         Relationships: []
       }
