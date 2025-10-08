@@ -10,7 +10,6 @@ import {
 } from "@/components/ui/select";
 import { Plus, TrendingUp, TrendingDown, LogOut, Settings } from "lucide-react";
 import InviteToDashboard from "@/components/InviteToDashboard";
-import SharedDashboardsNav from "@/components/SharedDashboardsNav";
 import {
   Dialog,
   DialogTrigger,
@@ -188,10 +187,45 @@ const Dashboard = () => {
       ? "This month"
       : "This year";
 
-  const handleTransactionAddedWithRefresh = () => {
-    setShowTransactionForm(false);
+  // --- NEW: local apply for a single inserted transaction row (if provided) ---
+  const applyLocalTx = (tx: any) => {
+    setTransactions((prev) => [tx, ...prev]); // keep local list coherent
+    setCurrentBalance((prev) => prev + Number(tx.net_flow || 0));
+
+    if (inPeriod(tx.date, incomePeriod)) {
+      setIncomeTotal((prev) => prev + Number(tx.net_income || 0));
+    }
+    if (inPeriod(tx.date, expensePeriod)) {
+      setExpenseTotal((prev) => prev + Number(tx.expense || 0));
+    }
+  };
+
+  // --- UPDATED: handle balance adjustment success ---
+  // If your BalanceAdjustment calls onSuccess(txRow), we'll apply locally.
+  // If not, we fall back to one dashboard fetch to update the cards.
+  const handleBalanceAdjusted = (tx?: any) => {
+    if (tx) {
+      applyLocalTx(tx);
+    } else {
+      // Single dashboard fetch to update cards (list will refetch separately)
+      fetchDashboardData();
+    }
+    // Let TransactionList refetch itself once
     setRefreshToken((r) => r + 1);
-    fetchDashboardData();
+  };
+
+  // --- UPDATED: after adding a transaction ---
+  const handleTransactionAddedWithRefresh = (tx?: any) => {
+    setShowTransactionForm(false);
+
+    // If your TransactionForm returns the new row, uncomment to avoid a fetch:
+    // if (tx) applyLocalTx(tx);
+
+    // Keep behavior identical to your Recent Transactions UX:
+    setRefreshToken((r) => r + 1);
+
+    // If you want the cards to refresh from DB after add, uncomment:
+    // fetchDashboardData();
   };
 
   if (loading) {
@@ -314,6 +348,7 @@ const Dashboard = () => {
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>
+
                 <ThemeToggle />
 
                 <Dialog>
@@ -385,10 +420,7 @@ const Dashboard = () => {
                 <div className="mt-3">
                   <BalanceAdjustment
                     currentBalance={currentBalance}
-                    onSuccess={() => {
-                      setRefreshToken((r) => r + 1);
-                      fetchDashboardData();
-                    }}
+                    onSuccess={handleBalanceAdjusted} // <— updated
                   />
                 </div>
               </Card>
@@ -425,7 +457,6 @@ const Dashboard = () => {
                     </SelectContent>
                   </Select>
                 </div>
-
               </Card>
             )}
 
@@ -460,7 +491,6 @@ const Dashboard = () => {
                     </SelectContent>
                   </Select>
                 </div>
-
               </Card>
             )}
           </div>
@@ -485,7 +515,7 @@ const Dashboard = () => {
         {showTransactionForm && (
           <TransactionForm
             onClose={() => setShowTransactionForm(false)}
-            onSuccess={handleTransactionAddedWithRefresh}
+            onSuccess={handleTransactionAddedWithRefresh} // <— updated
           />
         )}
       </div>

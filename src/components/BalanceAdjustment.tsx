@@ -1,5 +1,13 @@
 import { useState } from "react";
-import { Dialog, DialogContent, DialogTrigger, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogTrigger,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,7 +17,8 @@ import { useAuth } from "@/hooks/useAuth";
 
 interface Props {
   currentBalance: number;
-  onSuccess?: () => void;
+  // allow us to pass the just-inserted tx row back for instant UI updates
+  onSuccess?: (tx?: any) => void;
 }
 
 export default function BalanceAdjustment({ currentBalance, onSuccess }: Props) {
@@ -22,7 +31,11 @@ export default function BalanceAdjustment({ currentBalance, onSuccess }: Props) 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) {
-      toast({ title: "Not signed in", description: "You must be signed in to adjust balance", variant: "destructive" });
+      toast({
+        title: "Not signed in",
+        description: "You must be signed in to adjust balance",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -35,41 +48,41 @@ export default function BalanceAdjustment({ currentBalance, onSuccess }: Props) 
     const diff = +(entered - currentBalance).toFixed(2);
 
     if (diff === 0) {
-      toast({ title: "No change", description: "Entered balance matches current balance", variant: "default" });
+      toast({ title: "No change", description: "Entered balance matches current balance" });
       setOpen(false);
       return;
     }
 
-    // Build a corrective transaction so net_flow equals the difference
+    // Build the corrective transaction. DO NOT include net_flow.
     const isIncome = diff > 0;
-    const insertTx: any = {
+    const payload: any = {
       user_id: user.id,
       date,
-      category: isIncome ? "Misc" : "Misc",
+      category: "Adjustment",
       description: isIncome ? "RECTIFIED BALANCE INCOME" : "RECTIFIED BALANCE EXPENSE",
       account: "Adjustment",
       payment_method: "Adjustment",
-      gross_income: 0,
-      net_income: 0,
+      gross_income: isIncome ? diff : 0,
+      net_income: isIncome ? diff : 0,
       tax_paid: 0,
-      expense: 0,
+      expense: isIncome ? 0 : Math.abs(diff),
+      // net_flow intentionally omitted because it’s a generated column
     };
 
-    if (isIncome) {
-      insertTx.net_income = diff;
-      insertTx.gross_income = diff;
-    } else {
-      insertTx.expense = Math.abs(diff);
-    }
-
     try {
-      const { data: txData, error: txError } = await supabase.from("transactions").insert([insertTx]).select("id").single();
+      // IMPORTANT: defaultToNull: false prevents sending nulls to generated columns
+      const { data: txRows, error: txError } = await supabase
+        .from("transactions")
+        .insert([payload], { defaultToNull: false })
+        .select("id, date, description, net_income, expense, net_flow") // get the computed net_flow back
+        .single();
+
       if (txError) throw txError;
 
-      const txId = txData.id;
+      const txId = txRows.id;
 
       // record adjustment
-      const { error: adjError } = await (supabase as any).from("balance_adjustments").insert([
+      const { error: adjError } = await supabase.from("balance_adjustments").insert([
         {
           user_id: user.id,
           transaction_id: txId,
@@ -82,7 +95,9 @@ export default function BalanceAdjustment({ currentBalance, onSuccess }: Props) 
 
       toast({ title: "Balance adjusted", description: `Adjusted by €${diff.toFixed(2)}` });
       setOpen(false);
-      onSuccess?.();
+
+      // pass the inserted transaction back so the dashboard can update instantly
+      onSuccess?.(txRows);
     } catch (err: any) {
       toast({ title: "Error", description: err.message || String(err), variant: "destructive" });
     }
@@ -97,7 +112,9 @@ export default function BalanceAdjustment({ currentBalance, onSuccess }: Props) 
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Rectify current balance</DialogTitle>
-          <DialogDescription>Enter the correct current balance. A corrective transaction will be created to reconcile the difference.</DialogDescription>
+          <DialogDescription>
+            Enter the correct current balance. A corrective transaction will be created to reconcile the difference.
+          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={submit} className="grid gap-4 py-4">

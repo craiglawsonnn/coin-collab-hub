@@ -3,6 +3,7 @@ import LeftNav from "@/components/LeftNav";
 import ThemeToggle from "@/components/ThemeToggle";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { Pencil } from "lucide-react";
 
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -560,6 +561,30 @@ export default function Graphs() {
     }
   }
 
+  async function renameView() {
+  if (!user || !activeView) return;
+
+  const proposed = window.prompt("Rename view", activeView.name);
+  if (!proposed) return;
+
+  const name = proposed.trim();
+  if (!name || name === activeView.name) return;
+
+  const { error } = await supabase
+    .from("graph_views")
+    .update({ name })
+    .eq("id", activeView.id)
+    .eq("user_id", user.id);
+
+  if (!error) {
+    // update local list + keep selection
+    setViews((prev) => prev.map((v) => (v.id === activeView.id ? { ...v, name } : v)));
+  } else {
+    // optional: toast/error handling if you use your toast hook here
+    console.error(error);
+  }
+}
+
   function applyView(v: GraphView) {
     setActiveViewId(v.id);
     setCharts(v.charts);
@@ -603,6 +628,9 @@ export default function Graphs() {
 
               <Button onClick={() => setBuilderOpen(true)}>
                 <Plus className="h-4 w-4 mr-1" /> Add Graph
+              </Button>
+              <Button variant="outline" onClick={renameView} disabled={!activeView}>
+              <Pencil className="h-4 w-4 mr-1" /> Rename
               </Button>
 
               <Button variant="outline" onClick={() => saveView(true)} disabled={!activeView}>
