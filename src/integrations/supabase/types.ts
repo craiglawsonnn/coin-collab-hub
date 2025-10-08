@@ -65,6 +65,7 @@ export type Database = {
           owner_id: string
           role: Database["public"]["Enums"]["dashboard_role"]
           shared_with_user_id: string
+          status: Database["public"]["Enums"]["dashboard_invite_status"]
         }
         Insert: {
           created_at?: string | null
@@ -72,6 +73,7 @@ export type Database = {
           owner_id: string
           role?: Database["public"]["Enums"]["dashboard_role"]
           shared_with_user_id: string
+          status?: Database["public"]["Enums"]["dashboard_invite_status"]
         }
         Update: {
           created_at?: string | null
@@ -79,6 +81,7 @@ export type Database = {
           owner_id?: string
           role?: Database["public"]["Enums"]["dashboard_role"]
           shared_with_user_id?: string
+          status?: Database["public"]["Enums"]["dashboard_invite_status"]
         }
         Relationships: []
       }
@@ -168,6 +171,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
+      dashboard_invite_status: "pending" | "accepted" | "rejected"
       dashboard_role: "viewer" | "editor" | "admin"
     }
     CompositeTypes: {
@@ -296,6 +300,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      dashboard_invite_status: ["pending", "accepted", "rejected"],
       dashboard_role: ["viewer", "editor", "admin"],
     },
   },

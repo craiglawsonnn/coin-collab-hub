@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Home, Layers, Users, Settings, LayoutGrid } from "lucide-react";
+import { Home, Layers, Users, Settings, LayoutGrid, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import InviteManager from "@/components/InviteManager";
 import {
   Sidebar,
   SidebarContent,
@@ -30,17 +31,19 @@ export default function LeftNav({ children }: { children?: React.ReactNode }) {
   const { user } = useAuth();
   const [shared, setShared] = useState<SharedDash[]>([]);
   const [loadingShared, setLoadingShared] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   useEffect(() => {
     if (!user?.id) return;
     const load = async () => {
       setLoadingShared(true);
       try {
-        // Fetch dashboards shared with current user
+        // Fetch dashboards shared with current user (only accepted)
         const { data, error } = await supabase
           .from("dashboard_shares")
-          .select("owner_id, role, profiles!dashboard_shares_owner_id_fkey(full_name, email)")
-          .eq("shared_with_user_id", user.id);
+          .select("owner_id, role, status, profiles!dashboard_shares_owner_id_fkey(full_name, email)")
+          .eq("shared_with_user_id", user.id)
+          .eq("status", "accepted");
 
         if (error) {
           console.error("Error loading shared dashboards:", error);
@@ -135,10 +138,10 @@ export default function LeftNav({ children }: { children?: React.ReactNode }) {
                           variant="ghost"
                           size="sm"
                           className="justify-start"
-                          onClick={() => navigate("/users")}
+                          onClick={() => setInviteOpen(true)}
                         >
-                          <Users className="mr-2 h-4 w-4" />
-                          Manage users
+                          <UserPlus className="mr-2 h-4 w-4" />
+                          Invite User
                         </Button>
 
                         <div className="mt-2 text-xs uppercase text-muted-foreground px-2">
@@ -196,6 +199,9 @@ export default function LeftNav({ children }: { children?: React.ReactNode }) {
           {children}
         </SidebarInset>
       </div>
+
+      {/* Invite Manager Dialog */}
+      <InviteManager open={inviteOpen} onOpenChange={setInviteOpen} />
     </SidebarProvider>
   );
 }

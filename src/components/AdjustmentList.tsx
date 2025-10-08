@@ -14,8 +14,8 @@ interface Adjustment {
   as_of: string;
   note: string | null;
   created_at: string;
-  is_undone?: boolean;
   undone_at?: string | null;
+  undone_by?: string | null;
   created_by_name?: string | null;
   undone_by_name?: string | null;
 }
@@ -38,7 +38,7 @@ export default function AdjustmentList({ onUndo }: { onUndo?: () => void }) {
     try {
       const { data, error } = await (supabase as any)
         .from("balance_adjustments")
-        .select("id,transaction_id,amount,as_of,note,created_at,user_id,is_undone,undone_at,undone_by")
+        .select("id,transaction_id,amount,as_of,note,created_at,user_id,undone_at,undone_by")
         .order("created_at", { ascending: false })
         .limit(20);
       if (error) throw error;
@@ -107,7 +107,7 @@ export default function AdjustmentList({ onUndo }: { onUndo?: () => void }) {
       // mark adjustment as undone
       const { error: adjErr } = await (supabase as any)
         .from("balance_adjustments")
-        .update({ is_undone: true, undone_at: new Date().toISOString(), undone_by: user.id })
+        .update({ undone_at: new Date().toISOString(), undone_by: user.id })
         .eq("id", adjustment.id);
       if (adjErr) throw adjErr;
 
@@ -157,43 +157,43 @@ export default function AdjustmentList({ onUndo }: { onUndo?: () => void }) {
           <p className="text-muted-foreground text-center py-8">No adjustments yet.</p>
         ) : (
           <div className="space-y-3">
-            {adjustments.map((adj) => (
-              <div
-                key={adj.id}
-                className={`flex items-center justify-between p-4 rounded-lg border bg-card/50 hover:bg-card transition-colors ${adj.is_undone ? "opacity-50 grayscale" : ""}`}
-              >
-                <div>
-                  <p className="font-medium">€{Number(adj.amount).toFixed(2)}</p>
-                  <p className="text-xs text-muted-foreground">{adj.note || "Balance rectified"}</p>
-                  {adj.created_by_name && (
-                    <p className="text-xs text-muted-foreground">By: {String(adj.created_by_name).split(" ")[0]}</p>
-                  )}
-                  <p className="text-xs text-muted-foreground">As of: {new Date(adj.as_of).toLocaleDateString()}</p>
-                  {adj.is_undone && adj.undone_at && (
-                    <>
-                      <p className="text-xs text-muted-foreground">Undone: {new Date(adj.undone_at).toLocaleString()}</p>
-                      {adj.undone_by_name && (
-                        <p className="text-xs text-muted-foreground">Undone by: {String(adj.undone_by_name).split(" ")[0]}</p>
-                      )}
-                    </>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  {!adj.is_undone ? (
-                    <Button variant="ghost" size="icon" onClick={() => handleUndo(adj)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  ) : (
-                    // show permanent delete button which opens confirmation
-                    <>
+            {adjustments.map((adj) => {
+              const isUndone = !!adj.undone_at;
+              return (
+                <div
+                  key={adj.id}
+                  className={`flex items-center justify-between p-4 rounded-lg border bg-card/50 hover:bg-card transition-colors ${isUndone ? "opacity-50 grayscale" : ""}`}
+                >
+                  <div>
+                    <p className="font-medium">€{Number(adj.amount).toFixed(2)}</p>
+                    <p className="text-xs text-muted-foreground">{adj.note || "Balance rectified"}</p>
+                    {adj.created_by_name && (
+                      <p className="text-xs text-muted-foreground">By: {String(adj.created_by_name).split(" ")[0]}</p>
+                    )}
+                    <p className="text-xs text-muted-foreground">As of: {new Date(adj.as_of).toLocaleDateString()}</p>
+                    {isUndone && adj.undone_at && (
+                      <>
+                        <p className="text-xs text-muted-foreground">Undone: {new Date(adj.undone_at).toLocaleString()}</p>
+                        {adj.undone_by_name && (
+                          <p className="text-xs text-muted-foreground">Undone by: {String(adj.undone_by_name).split(" ")[0]}</p>
+                        )}
+                      </>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {!isUndone ? (
+                      <Button variant="ghost" size="icon" onClick={() => handleUndo(adj)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    ) : (
                       <Button variant="destructive" size="sm" onClick={() => setSelectedToDelete(adj)}>
                         Delete permanently
                       </Button>
-                    </>
-                  )}
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </Card>
