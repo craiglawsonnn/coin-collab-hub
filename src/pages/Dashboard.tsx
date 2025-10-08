@@ -40,12 +40,20 @@ import DarkVeil from "@/components/DarkVeil";
 import LightVeil from "@/components/LightVeil";
 import { useIsMobile } from "@/hooks/use-mobile";
 
+type Period = "day" | "week" | "month" | "year";
+
 const Dashboard = () => {
   const [showTransactionForm, setShowTransactionForm] = useState(false);
   const [currentBalance, setCurrentBalance] = useState(0);
-  const [monthlyIncome, setMonthlyIncome] = useState(0);
-  const [monthlyExpenses, setMonthlyExpenses] = useState(0);
-  const [period, setPeriod] = useState<"day" | "week" | "month" | "year">("month");
+
+  // INDEPENDENT totals
+  const [incomeTotal, setIncomeTotal] = useState(0);
+  const [expenseTotal, setExpenseTotal] = useState(0);
+
+  // INDEPENDENT periods
+  const [incomePeriod, setIncomePeriod] = useState<Period>("month");
+  const [expensePeriod, setExpensePeriod] = useState<Period>("month");
+
   const [refreshToken, setRefreshToken] = useState(0);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [customViews, setCustomViews] = useState<any[]>([]);
@@ -111,64 +119,57 @@ const Dashboard = () => {
 
   useEffect(() => {
     if (user) fetchDashboardData();
-  }, [user, period]);
+    // re-run when either period changes (they're independent)
+  }, [user, incomePeriod, expensePeriod]);
+
+  const inPeriod = (dateStr: string, p: Period) => {
+    const now = new Date();
+    const d = new Date(dateStr);
+
+    if (p === "day") {
+      return (
+        d.getFullYear() === now.getFullYear() &&
+        d.getMonth() === now.getMonth() &&
+        d.getDate() === now.getDate()
+      );
+    }
+    if (p === "week") {
+      const diffDays = (now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24);
+      return diffDays >= 0 && diffDays < 7;
+    }
+    if (p === "month") {
+      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+    }
+    if (p === "year") {
+      return d.getFullYear() === now.getFullYear();
+    }
+    return false;
+  };
 
   const fetchDashboardData = async () => {
     try {
-      const { data: transactions, error } = await supabase
+      const { data, error } = await supabase
         .from("transactions")
         .select("*")
         .order("date", { ascending: false });
       if (error) throw error;
 
-      if (transactions) {
-        setTransactions(transactions as any[]);
-        const totalBalance = transactions.reduce(
-          (sum, t) => sum + Number(t.net_flow || 0),
-          0
-        );
+      const tx = (data as any[]) || [];
+      setTransactions(tx);
 
-        const now = new Date();
-        const inPeriod = (dateStr: string) => {
-          const date = new Date(dateStr);
-          if (period === "day") {
-            return (
-              date.getFullYear() === now.getFullYear() &&
-              date.getMonth() === now.getMonth() &&
-              date.getDate() === now.getDate()
-            );
-          }
-          if (period === "week") {
-            const diffDays =
-              (now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24);
-            return diffDays >= 0 && diffDays < 7;
-          }
-          if (period === "month") {
-            return (
-              date.getFullYear() === now.getFullYear() &&
-              date.getMonth() === now.getMonth()
-            );
-          }
-          if (period === "year") {
-            return date.getFullYear() === now.getFullYear();
-          }
-          return false;
-        };
+      // Balance = total net_flow overall
+      const totalBalance = tx.reduce((sum, t) => sum + Number(t.net_flow || 0), 0);
+      setCurrentBalance(totalBalance);
 
-        const periodTransactions = transactions.filter((t) => inPeriod(t.date));
-        const income = periodTransactions.reduce(
-          (s, t) => s + Number(t.net_income || 0),
-          0
-        );
-        const expense = periodTransactions.reduce(
-          (s, t) => s + Number(t.expense || 0),
-          0
-        );
+      // Income uses incomePeriod
+      const incomeTx = tx.filter((t) => inPeriod(t.date, incomePeriod));
+      const income = incomeTx.reduce((s, t) => s + Number(t.net_income || 0), 0);
+      setIncomeTotal(income);
 
-        setCurrentBalance(totalBalance);
-        setMonthlyIncome(income);
-        setMonthlyExpenses(expense);
-      }
+      // Expenses use expensePeriod
+      const expenseTx = tx.filter((t) => inPeriod(t.date, expensePeriod));
+      const expense = expenseTx.reduce((s, t) => s + Number(t.expense || 0), 0);
+      setExpenseTotal(expense);
     } catch (error: any) {
       toast({
         title: "Error fetching data",
@@ -178,20 +179,14 @@ const Dashboard = () => {
     }
   };
 
-  const periodTitle = (p: typeof period) => {
-    switch (p) {
-      case "day":
-        return "Today";
-      case "week":
-        return "This week";
-      case "month":
-        return "This month";
-      case "year":
-        return "This year";
-      default:
-        return "This month";
-    }
-  };
+  const titleFor = (p: Period) =>
+    p === "day"
+      ? "This day"
+      : p === "week"
+      ? "This week"
+      : p === "month"
+      ? "This month"
+      : "This year";
 
   const handleTransactionAddedWithRefresh = () => {
     setShowTransactionForm(false);
@@ -244,7 +239,6 @@ const Dashboard = () => {
                 <p className="text-sm text-muted-foreground">Track your finances together</p>
               </div>
               <div className="flex gap-2">
-                <SharedDashboardsNav />
                 <Dialog>
                   <DialogTrigger asChild>
                     <Button variant="ghost" size="icon">
@@ -321,19 +315,7 @@ const Dashboard = () => {
                   </DialogContent>
                 </Dialog>
                 <ThemeToggle />
-                <div className="flex items-center">
-                  <Select value={period} onValueChange={(v) => setPeriod(v as any)}>
-                    <SelectTrigger className="mr-2 w-36 bg-input">
-                      <SelectValue placeholder="Period" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-popover">
-                      <SelectItem value="day">Day</SelectItem>
-                      <SelectItem value="week">Week</SelectItem>
-                      <SelectItem value="month">Month</SelectItem>
-                      <SelectItem value="year">Year</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+
                 <Dialog>
                   <DialogTrigger asChild>
                     <Button className="mr-2" variant="outline" size="sm">
@@ -400,7 +382,6 @@ const Dashboard = () => {
                 <p className="text-3xl font-bold text-foreground">€{currentBalance.toFixed(2)}</p>
                 <p className="text-xs text-muted-foreground mt-2">All accounts combined</p>
 
-                {/* Put it here */}
                 <div className="mt-3">
                   <BalanceAdjustment
                     currentBalance={currentBalance}
@@ -416,22 +397,70 @@ const Dashboard = () => {
             {showIncomeCard && (
               <Card className="p-6 bg-gradient-to-br from-success/10 to-success/5 shadow-lg hover:shadow-xl transition-shadow border-success/20">
                 <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm font-medium text-success">{periodTitle(period)} Income</p>
+                  <p className="text-sm font-medium text-success">{titleFor(incomePeriod)} Income</p>
                   <TrendingUp className="h-5 w-5 text-success" />
                 </div>
-                <p className="text-3xl font-bold text-success">€{monthlyIncome.toFixed(2)}</p>
-                <p className="text-xs text-success/70 mt-2">{periodTitle(period)}</p>
+                <p className="text-3xl font-bold text-success">€{incomeTotal.toFixed(2)}</p>
+                <p className="text-xs text-success/70 mt-2">{titleFor(incomePeriod)}</p>
+
+                {/* Income period selector */}
+                <div className="mt-3 w-40">
+                  <Select value={incomePeriod} onValueChange={(v) => setIncomePeriod(v as any)}>
+                    <SelectTrigger
+                      className="
+                        h-9 border
+                        bg-success/15 hover:bg-success/20 data-[state=open]:bg-success/25
+                        text-success border-success/30
+                        dark:bg-success/20 dark:hover:bg-success/25 dark:data-[state=open]:bg-success/30
+                        dark:border-success/40
+                      "
+                    >
+                      <SelectValue placeholder="Period" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-popover border border-border">
+                      <SelectItem value="day">Day</SelectItem>
+                      <SelectItem value="week">Week</SelectItem>
+                      <SelectItem value="month">Month</SelectItem>
+                      <SelectItem value="year">Year</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
               </Card>
             )}
 
             {showExpensesCard && (
               <Card className="p-6 bg-gradient-to-br from-destructive/10 to-destructive/5 shadow-lg hover:shadow-xl transition-shadow border-destructive/20">
                 <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm font-medium text-destructive">{periodTitle(period)} Expenses</p>
+                  <p className="text-sm font-medium text-destructive">{titleFor(expensePeriod)} Expenses</p>
                   <TrendingDown className="h-5 w-5 text-destructive" />
                 </div>
-                <p className="text-3xl font-bold text-destructive">€{monthlyExpenses.toFixed(2)}</p>
-                <p className="text-xs text-destructive/70 mt-2">{periodTitle(period)}</p>
+                <p className="text-3xl font-bold text-destructive">€{expenseTotal.toFixed(2)}</p>
+                <p className="text-xs text-destructive/70 mt-2">{titleFor(expensePeriod)}</p>
+
+                {/* Expense period selector */}
+                <div className="mt-3 w-40">
+                  <Select value={expensePeriod} onValueChange={(v) => setExpensePeriod(v as any)}>
+                    <SelectTrigger
+                      className="
+                        h-9 border
+                        bg-destructive/15 hover:bg-destructive/20 data-[state=open]:bg-destructive/25
+                        text-destructive border-destructive/30
+                        dark:bg-destructive/20 dark:hover:bg-destructive/25 dark:data-[state=open]:bg-destructive/30
+                        dark:border-destructive/40
+                      "
+                    >
+                      <SelectValue placeholder="Period" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-popover border border-border">
+                      <SelectItem value="day">Day</SelectItem>
+                      <SelectItem value="week">Week</SelectItem>
+                      <SelectItem value="month">Month</SelectItem>
+                      <SelectItem value="year">Year</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
               </Card>
             )}
           </div>

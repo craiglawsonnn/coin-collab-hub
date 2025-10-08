@@ -1,231 +1,143 @@
-# TODO: Apply and verify `balance_adjustments` migration
+1) Create the view
 
-Purpose
-- The app now expects a `public.balance_adjustments` table (migration file: `supabase/migrations/20251006120000_create_balance_adjustments.sql`).
-- This TODO lists the exact DB-side steps to apply the migration, verify it, add a rollback, and follow-up tasks (types, tests, and removing runtime `any` casts).
+Expose only minimal fields used for inviting: id, full_name, email.
 
-Files of interest
-- Migration SQL (already present): `supabase/migrations/20251006120000_create_balance_adjustments.sql`
-- App code that uses the table:
-  - `src/components/BalanceAdjustment.tsx` (inserts into `balance_adjustments`)
-  - `src/components/AdjustmentList.tsx` (reads/deletes from `balance_adjustments`)
+-- 01_view_searchable_profiles.sql
+create or replace view public.searchable_profiles as
+select
+  id,
+  full_name,
+  email
+from public.profiles;
 
-Checklist: apply migration (local or remote)
-1. If you run a local Supabase dev stack (Docker / supabase CLI):
+2) RLS & permissions
 
-   - Ensure the local stack is running:
-     ```bash
-    TODO: Database tasks to apply and verify schema changes for implemented features
+RLS on a view inherits from the base table (profiles). We’ll allow authenticated users to SELECT profiles so search can work. (Write policies remain unchanged.)
 
-    This checklist collects all DB-side work you need to perform so the running Supabase database matches the features implemented in the app.
-    It covers migrations present in this repo, verification steps, RLS/policy checks, type updates, backfills, and rollbacks.
+-- 02_rls_profiles_select.sql
+alter table public.profiles enable row level security;
 
-    Summary of schema changes present in the repo
-    - `supabase/migrations/20251006120000_create_balance_adjustments.sql` — table `public.balance_adjustments` (used by BalanceAdjustment and AdjustmentList).
-    - `supabase/migrations/20251006_add_profiles_preferences.sql` — adds `preferences jsonb` column to `public.profiles` (used to store user dashboard preferences & custom views).
+-- Allow signed-in users to read minimal profile info (read-only)
+create policy "profiles are readable to authenticated users"
+on public.profiles
+for select
+using (auth.role() = 'authenticated');
 
-    Prerequisites
-    - Have the Supabase CLI installed and authenticated if you plan to use it locally or against a hosted project: https://supabase.com/docs/guides/cli
-    - If working with production data, create a DB backup / export first.
+-- Optional: make sure anonymous users cannot read
+revoke select on public.searchable_profiles from anon;
+grant  select on public.searchable_profiles to authenticated;
 
-    1) Apply migrations (recommended: staging -> production)
 
-    - Local dev (supabase CLI recommended):
+If you prefer not to grant SELECT on the base table, you can use a SECURITY DEFINER function to return rows, but that’s a more advanced setup. The simple approach above is usually fine for invite search.
 
-      ```bash
-      # start local dev db (if not running)
-      supabase start
+3) Speed up search (indexes)
 
-      # push migrations from repo to the DB (applies all unapplied migrations)
-      supabase db push
-      # or deploy migrations if using the migrations flow:
-      supabase migrations deploy
-      ```
+We search with ILIKE on full_name and email. Enable trigram and index those columns.
 
-    - Hosted Supabase project:
+-- 03_indexes_profiles_trgm.sql
+create extension if not exists pg_trgm;
 
-      ```bash
-      supabase login
-      supabase link --project-ref <project-ref>
-      supabase db push
-      ```
+create index if not exists idx_profiles_full_name_trgm
+  on public.profiles using gin (full_name gin_trgm_ops);
 
-    - Alternatively, apply an individual SQL file directly (psql or Supabase SQL editor):
+create index if not exists idx_profiles_email_trgm
+  on public.profiles using gin (email gin_trgm_ops);
 
-      ```bash
-      psql "postgresql://<user>:<pw>@<host>:5432/<db>?sslmode=require" -f supabase/migrations/20251006120000_create_balance_adjustments.sql
-      psql "postgresql://<user>:<pw>@<host>:5432/<db>?sslmode=require" -f supabase/migrations/20251006_add_profiles_preferences.sql
-      ```
+4) (Optional) Data hygiene
 
-    2) Verification (schema & basic sanity)
+Backfill full_name if you have empty values and want them searchable.
 
-    - Check tables/columns exist and inspect columns:
+-- 04_backfill_full_name.sql
+update public.profiles
+set full_name = split_part(email, '@', 1)
+where (full_name is null or length(trim(full_name)) = 0)
+  and email is not null;
 
-      ```sql
-      -- run in psql or Supabase SQL editor
-      \dt public.balance_adjustments
-      SELECT column_name, data_type FROM information_schema.columns WHERE table_schema='public' AND table_name='balance_adjustments';
-      SELECT column_name, data_type FROM information_schema.columns WHERE table_schema='public' AND table_name='profiles';
-      SELECT preferences FROM public.profiles LIMIT 5;
-      ```
+5) Client change
 
-    - Confirm migrations applied (supabase CLI will list migrations) or check migration table in DB:
-      - `SELECT * FROM supabase_migrations.order_migrations LIMIT 20;` (or equivalent depending on CLI/migrations setup)
+Update InviteManager to query the view.
 
-    3) RLS / Policies
+// Replace the existing search query with this:
+const { data, error } = await supabase
+  .from("searchable_profiles")
+  .select("id, full_name, email")
+  .neq("id", user?.id || "")
+  .or(`full_name.ilike.%${query}%,email.ilike.%${query}%`)
+  .limit(10);
 
-    - Verify Row-Level Security (RLS) policies for the new table and for profiles (if you rely on RLS for profile updates):
 
-      ```sql
-      -- policies for balance_adjustments (example queries)
-      SELECT policyname, cmd, permissive FROM pg_policies WHERE schemaname='public' AND tablename='balance_adjustments';
-      -- If policies are missing, consider adding these example policies (adjust to your security model):
-      BEGIN;
-      CREATE POLICY "balance_adjustments_allow_owner_select" ON public.balance_adjustments FOR SELECT USING (user_id = auth.uid());
-      CREATE POLICY "balance_adjustments_allow_owner_insert" ON public.balance_adjustments FOR INSERT WITH CHECK (user_id = auth.uid());
-      CREATE POLICY "balance_adjustments_allow_owner_delete" ON public.balance_adjustments FOR DELETE USING (user_id = auth.uid());
-      COMMIT;
-      ```
+Tip: debounce and ignore queries shorter than 2 characters to reduce load.
 
-    - For `profiles` you may already have RLS; ensure the authenticated user can update their own `preferences` value. Example policy:
+6) Testing checklist
 
-      ```sql
-      -- allow a user to update only their own profile row
-      CREATE POLICY "profiles_update_own" ON public.profiles FOR UPDATE USING (id = auth.uid()) WITH CHECK (id = auth.uid());
-      ```
+ As an authenticated user, type at least 2 chars in the invite search — results appear.
 
-    4) Backfills & data hygiene
+ Your own profile does not appear (because of .neq('id', user.id)).
 
-    - Backfill `preferences` for existing profiles (sets to empty object if NULL):
+ Try searching by name and email, both work.
 
-      ```sql
-      UPDATE public.profiles SET preferences = '{}'::jsonb WHERE preferences IS NULL;
-      ```
+ Test on a blank account: if no full_name, email still matches.
 
-    - If you have pre-existing adjustments data to migrate into the new table, prepare and run a targeted migration script (not included here).
+ Verify anon user (signed out) cannot read from the view (403).
 
-    5) Indexes & performance
+7) Rollback plan
 
-    - If you query `preferences` JSONB keys often (e.g., customViews), consider a GIN index:
+If needed:
 
-      ```sql
-      CREATE INDEX IF NOT EXISTS idx_profiles_preferences_gin ON public.profiles USING gin (preferences jsonb_path_ops);
-      ```
+drop view if exists public.searchable_profiles;
 
-    - For `balance_adjustments`, if you query by user or transaction often, add indexes:
+-- (Optional) drop indexes
+drop index if exists idx_profiles_full_name_trgm;
+drop index if exists idx_profiles_email_trgm;
 
-      ```sql
-      CREATE INDEX IF NOT EXISTS idx_balance_adjustments_user ON public.balance_adjustments (user_id);
-      CREATE INDEX IF NOT EXISTS idx_balance_adjustments_tx ON public.balance_adjustments (transaction_id);
-      ```
+-- (Optional) remove policy (only if you want to revert)
+drop policy if exists "profiles are readable to authenticated users" on public.profiles;
 
-    6) Types / TypeScript updates
+8) Security notes
 
-    - If you use generated Supabase types, regenerate them so `src/integrations/supabase/types.ts` matches the DB. Example (using supabase CLI):
+This grants read-only access to id, full_name, email for all signed-in users, which is standard for invite flows.
 
-      ```bash
-      # generate types to stdout or write to a file
-      supabase gen types typescript --project-ref <project-ref> > supabase-types.ts
-      ```
+Keep write policies restrictive (e.g., only id = auth.uid() can update their own row).
 
-    - If you maintain the types manually (file in this repo: `src/integrations/supabase/types.ts`) ensure it contains:
+If you later want tighter control, replace Step 2 with a SECURITY DEFINER function that returns only those 3 columns and grant EXECUTE to authenticated.
 
-      - `profiles.Row` includes `preferences: Json | null` (we added this earlier).
-      - `balance_adjustments` table definition under `public.Tables` with Row/Insert/Update types. Example shape:
+9) Migration order
 
-      ```ts
-      balance_adjustments: {
-        Row: {
-          id: string;
-          user_id: string;
-          transaction_id: string;
-          amount: string; // decimal types map to string in the generated types
-          as_of: string; // date
-          note: string | null;
-          undone_by?: string | null;
-          undone_at?: string | null;
-          created_at: string | null;
-        };
-        Insert: {
-          id?: string;
-          user_id: string;
-          transaction_id: string;
-          amount: string | number;
-          as_of?: string;
-          note?: string | null;
-          undone_by?: string | null;
-          undone_at?: string | null;
-          created_at?: string | null;
-        };
-        Update: {
-          id?: string;
-          user_id?: string;
-          transaction_id?: string;
-          amount?: string | number;
-          as_of?: string;
-          note?: string | null;
-          undone_by?: string | null;
-          undone_at?: string | null;
-          created_at?: string | null;
-        };
-      }
-      ```
+Run SQL in this order:
 
-    - After updating types, remove any `(supabase as any)` casts in code (search the repo) and run `npx tsc --noEmit` to validate.
+01_view_searchable_profiles.sql
 
-    7) App-level verification (manual QA checklist)
+02_rls_profiles_select.sql
 
-    - Start the app and exercise these flows as the logged-in user (and another test user if possible):
-      - Rectify balance: use the UI (BalanceAdjustment) to create a corrective transaction and a `balance_adjustments` record. Inspect both tables to confirm rows were created.
-      - Adjustment list: view Undo / Permanent Delete flows in `AdjustmentList` — ensure undo inserts a reversing transaction and marks the adjustment undone (or deletes as per your implemention).
-      - Profile preferences: open the dashboard settings dialog, toggle cards and create a custom view, click Save. Reload the page — settings and created views should persist.
-      - Account balances dialog: open and confirm account aggregation and that empty lists show €0.00.
+03_indexes_profiles_trgm.sql
 
-    8) Rollback (prepare down migrations)
+04_backfill_full_name.sql (optional)
 
-    - For each up migration you applied, prepare a down migration SQL file in `supabase/migrations` that reverts the change. Examples:
+Then deploy the client change in InviteManager.
 
-      - Drop the `preferences` column:
-        ```sql
-        ALTER TABLE IF EXISTS public.profiles DROP COLUMN IF EXISTS preferences;
-        ```
+Also:
+-- Views created by each user
+create table if not exists public.graph_views (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  name text not null,
+  charts jsonb not null,              -- array of chart configs
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
 
-      - Drop the `balance_adjustments` table:
-        ```sql
-        DROP TABLE IF EXISTS public.balance_adjustments;
-        ```
+-- keep updated_at fresh
+create extension if not exists moddatetime with schema extensions;
+create trigger handle_updated_at
+before update on public.graph_views
+for each row execute procedure extensions.moddatetime(updated_at);
 
-    - Apply rollbacks only after verifying you won't lose production-critical data. Prefer testing rollbacks in a staging environment first.
-
-    9) CI / Tests
-
-    - Add CI steps to validate DB and code compatibility:
-      - `npx tsc --noEmit` (typecheck)
-      - Optionally run integration tests that exercise DB migrations against a disposable test DB or mock Supabase responses.
-
-    10) Cleanup & follow-ups
-
-    - Remove all runtime `any` casts for Supabase client once types are updated.
-    - Consider adding automated tests for the key flows (adjustment, preferences persistence).
-
-    Quick verification SQL snippets
-
-    ```sql
-    -- check latest adjustments
-    SELECT * FROM public.balance_adjustments ORDER BY created_at DESC LIMIT 10;
-
-    -- check profiles preferences for a user
-    SELECT id, preferences FROM public.profiles WHERE id = '<user-id>' LIMIT 1;
-
-    -- check transactions created by rectification (example description)
-    SELECT * FROM public.transactions WHERE description ILIKE '%RECTIFIED%' ORDER BY created_at DESC LIMIT 10;
-    ```
-
-    If you'd like, I can:
-    - Draft down-migration SQL files and add them to `supabase/migrations`.
-    - Regenerate or fully update the TypeScript DB types for you (or patch `src/integrations/supabase/types.ts` to include `balance_adjustments` if you prefer explicit edits). Note: this repo already contains a manual `types.ts` that we updated with `preferences` — we can add `balance_adjustments` there as well.
-    - Add a small verification script (Node) that performs the common QA steps (create adjustment, query rows, cleanup) against a test Supabase project.
-
-    ---
-
-    Keep this file updated with any further schema changes. Once migrations are applied to your target environment, mark the tasks as done.
+alter table public.graph_views enable row level security;
+create policy "select own" on public.graph_views
+  for select using (auth.uid() = user_id);
+create policy "insert own" on public.graph_views
+  for insert with check (auth.uid() = user_id);
+create policy "update own" on public.graph_views
+  for update using (auth.uid() = user_id);
+create policy "delete own" on public.graph_views
+  for delete using (auth.uid() = user_id);
