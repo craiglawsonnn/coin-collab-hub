@@ -11,7 +11,15 @@ import {
 import { Plus, TrendingUp, TrendingDown, LogOut, Settings } from "lucide-react";
 import InviteToDashboard from "@/components/InviteToDashboard";
 import SharedDashboardsNav from "@/components/SharedDashboardsNav";
-import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogTrigger,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import AccountBalances from "@/components/AccountBalances";
 import CreateViewForm from "@/components/CreateViewForm";
@@ -26,6 +34,11 @@ import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+
+/* Background veils + mobile flag */
+import DarkVeil from "@/components/DarkVeil";
+import LightVeil from "@/components/LightVeil";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 const Dashboard = () => {
   const [showTransactionForm, setShowTransactionForm] = useState(false);
@@ -47,11 +60,32 @@ const Dashboard = () => {
   const [showMonthlySummaryCard, setShowMonthlySummaryCard] = useState(true);
   const [showAdjustmentsCard, setShowAdjustmentsCard] = useState(true);
 
-  // load user preferences on mount
+  const isMobile = useIsMobile();
+
+  // track theme
+  const [isDark, setIsDark] = useState(
+    () =>
+      typeof document !== "undefined" &&
+      document.documentElement.classList.contains("dark")
+  );
+  useEffect(() => {
+    const root = document.documentElement;
+    const obs = new MutationObserver(() =>
+      setIsDark(root.classList.contains("dark"))
+    );
+    obs.observe(root, { attributes: true, attributeFilter: ["class"] });
+    return () => obs.disconnect();
+  }, []);
+
+  // load user prefs
   useEffect(() => {
     const loadPrefs = async () => {
       try {
-        const { data: profile, error } = await supabase.from("profiles").select("preferences").eq("id", user?.id).single();
+        const { data: profile, error } = await supabase
+          .from("profiles")
+          .select("preferences")
+          .eq("id", user?.id)
+          .single();
         if (error) throw error;
         const prefs = (profile?.preferences as any) || {};
         if (prefs.cards) {
@@ -64,24 +98,19 @@ const Dashboard = () => {
         if (prefs.customViews && Array.isArray(prefs.customViews)) {
           setCustomViews(prefs.customViews);
         }
-      } catch (err: any) {
-        // ignore errors silently
+      } catch {
+        // ignore
       }
     };
-
     if (user) loadPrefs();
   }, [user]);
 
   useEffect(() => {
-    if (!loading && !user) {
-      navigate("/auth");
-    }
+    if (!loading && !user) navigate("/auth");
   }, [user, loading, navigate]);
 
   useEffect(() => {
-    if (user) {
-      fetchDashboardData();
-    }
+    if (user) fetchDashboardData();
   }, [user, period]);
 
   const fetchDashboardData = async () => {
@@ -90,7 +119,6 @@ const Dashboard = () => {
         .from("transactions")
         .select("*")
         .order("date", { ascending: false });
-
       if (error) throw error;
 
       if (transactions) {
@@ -101,7 +129,6 @@ const Dashboard = () => {
         );
 
         const now = new Date();
-
         const inPeriod = (dateStr: string) => {
           const date = new Date(dateStr);
           if (period === "day") {
@@ -111,29 +138,32 @@ const Dashboard = () => {
               date.getDate() === now.getDate()
             );
           }
-
           if (period === "week") {
-            // last 7 days inclusive (today and previous 6 days)
-            const diffMs = now.getTime() - date.getTime();
-            const diffDays = diffMs / (1000 * 60 * 60 * 24);
+            const diffDays =
+              (now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24);
             return diffDays >= 0 && diffDays < 7;
           }
-
           if (period === "month") {
-            return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
+            return (
+              date.getFullYear() === now.getFullYear() &&
+              date.getMonth() === now.getMonth()
+            );
           }
-
           if (period === "year") {
             return date.getFullYear() === now.getFullYear();
           }
-
           return false;
         };
 
         const periodTransactions = transactions.filter((t) => inPeriod(t.date));
-
-        const income = periodTransactions.reduce((sum, t) => sum + Number(t.net_income || 0), 0);
-        const expense = periodTransactions.reduce((sum, t) => sum + Number(t.expense || 0), 0);
+        const income = periodTransactions.reduce(
+          (s, t) => s + Number(t.net_income || 0),
+          0
+        );
+        const expense = periodTransactions.reduce(
+          (s, t) => s + Number(t.expense || 0),
+          0
+        );
 
         setCurrentBalance(totalBalance);
         setMonthlyIncome(income);
@@ -163,14 +193,8 @@ const Dashboard = () => {
     }
   };
 
-  const handleTransactionAdded = () => {
+  const handleTransactionAddedWithRefresh = () => {
     setShowTransactionForm(false);
-    fetchDashboardData();
-  };
-
-  const handleTransactionAddedWithRefresh = (id?: string) => {
-    setShowTransactionForm(false);
-    // bump the refresh token so children can react
     setRefreshToken((r) => r + 1);
     fetchDashboardData();
   };
@@ -182,177 +206,259 @@ const Dashboard = () => {
       </div>
     );
   }
-
   if (!user) return null;
 
   return (
     <LeftNav>
-      <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b bg-card">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-foreground">Budget Tracker</h1>
-              <p className="text-sm text-muted-foreground">Track your finances together</p>
-            </div>
-            <div className="flex gap-2">
-              <BalanceAdjustment currentBalance={currentBalance} onSuccess={() => { setRefreshToken((r) => r + 1); fetchDashboardData(); }} />
-              <SharedDashboardsNav />
-              <Dialog>
-                <DialogTrigger asChild>
-                  <Button variant="ghost" size="icon">
-                    <Settings className="h-5 w-5" />
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-sm">
-                  <DialogHeader>
-                    <DialogTitle>Customize dashboard</DialogTitle>
-                    <DialogDescription>Choose which cards are visible on your dashboard. These settings are saved to your profile.</DialogDescription>
-                  </DialogHeader>
+      {/* keep background exactly how you had it */}
+      <div className="relative min-h-screen bg-background overflow-hidden">
+        <div className="absolute inset-0 pointer-events-none">
+          {isDark ? (
+            <DarkVeil
+              key="dark"
+              className="h-full w-full"
+              hueShift={0}
+              noiseIntensity={0.03}
+              scanlineIntensity={0.06}
+              scanlineFrequency={2.8}
+              speed={isMobile ? 0.35 : 0.5}
+              warpAmount={0.08}
+              resolutionScale={isMobile ? 0.75 : 1}
+            />
+          ) : (
+            <LightVeil
+              key="light"
+              className="h-full w-full"
+              speed={isMobile ? 0.35 : 0.5}
+              resolutionScale={isMobile ? 0.75 : 1}
+            />
+          )}
+        </div>
 
-                  <div className="grid gap-3 py-4">
-                    <label className="flex items-center gap-2"><Checkbox checked={showBalanceCard} onCheckedChange={(v) => setShowBalanceCard(Boolean(v))} /> <span>Current Balance</span></label>
-                    <label className="flex items-center gap-2"><Checkbox checked={showIncomeCard} onCheckedChange={(v) => setShowIncomeCard(Boolean(v))} /> <span>Income</span></label>
-                    <label className="flex items-center gap-2"><Checkbox checked={showExpensesCard} onCheckedChange={(v) => setShowExpensesCard(Boolean(v))} /> <span>Expenses</span></label>
-                    <label className="flex items-center gap-2"><Checkbox checked={showMonthlySummaryCard} onCheckedChange={(v) => setShowMonthlySummaryCard(Boolean(v))} /> <span>Monthly Summary</span></label>
-                    <label className="flex items-center gap-2"><Checkbox checked={showAdjustmentsCard} onCheckedChange={(v) => setShowAdjustmentsCard(Boolean(v))} /> <span>Adjustments</span></label>
-                  </div>
-              <InviteToDashboard dashboardId={user?.id} />
-
-                  <DialogFooter>
-                    <Button variant="outline" onClick={async () => {
-                      try {
-                        const prefs = { cards: { showBalanceCard, showIncomeCard, showExpensesCard, showMonthlySummaryCard, showAdjustmentsCard } };
-                        const { error } = await supabase.from("profiles").update({ preferences: prefs }).eq("id", user?.id);
-                        if (error) throw error;
-                        toast({ title: "Preferences saved" });
-                      } catch (err: any) {
-                        toast({ title: "Error saving preferences", description: err.message || String(err), variant: "destructive" });
-                      }
-                    }}>Save</Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-              <ThemeToggle />
-              <div className="flex items-center">
-                <Select value={period} onValueChange={(v) => setPeriod(v as any)}>
-                  <SelectTrigger className="mr-2 w-36 bg-input">
-                    <SelectValue placeholder="Period" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-popover">
-                    <SelectItem value="day">Day</SelectItem>
-                    <SelectItem value="week">Week</SelectItem>
-                    <SelectItem value="month">Month</SelectItem>
-                    <SelectItem value="year">Year</SelectItem>
-                  </SelectContent>
-                </Select>
+        {/* Header — fluid width (no container) */}
+        <header className="relative z-10 border-b bg-card/80 backdrop-blur">
+          <div className="w-full px-4 py-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl font-bold text-foreground">Budget Tracker</h1>
+                <p className="text-sm text-muted-foreground">Track your finances together</p>
               </div>
-              <Dialog>
-                <DialogTrigger asChild>
-                  <Button className="mr-2" variant="outline" size="sm">
-                    <Plus className="mr-2 h-4 w-4" /> Add view
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-md">
-                  <DialogHeader>
-                    <DialogTitle>Create custom view</DialogTitle>
-                    <DialogDescription>Create a wallet or insight view (pie or bar chart).</DialogDescription>
-                  </DialogHeader>
+              <div className="flex gap-2">
+                <SharedDashboardsNav />
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button variant="ghost" size="icon">
+                      <Settings className="h-5 w-5" />
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-sm">
+                    <DialogHeader>
+                      <DialogTitle>Customize dashboard</DialogTitle>
+                      <DialogDescription>
+                        Choose which cards are visible on your dashboard. These settings are saved to your profile.
+                      </DialogDescription>
+                    </DialogHeader>
 
-                  <CreateViewForm
-                    transactions={transactions}
-                    onCreate={async (view) => {
-                      try {
-                        const next = [...customViews, view];
-                        setCustomViews(next);
-                        const prefs = { customViews: next };
-                        const { error } = await supabase.from("profiles").update({ preferences: prefs }).eq("id", user?.id);
-                        if (error) throw error;
-                        toast({ title: "View saved" });
-                      } catch (err: any) {
-                        toast({ title: "Error saving view", description: err.message || String(err), variant: "destructive" });
-                      }
-                    }}
-                  />
-                </DialogContent>
-              </Dialog>
+                    <div className="grid gap-3 py-4">
+                      <label className="flex items-center gap-2">
+                        <Checkbox checked={showBalanceCard} onCheckedChange={(v) => setShowBalanceCard(Boolean(v))} />
+                        <span>Current Balance</span>
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <Checkbox checked={showIncomeCard} onCheckedChange={(v) => setShowIncomeCard(Boolean(v))} />
+                        <span>Income</span>
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <Checkbox checked={showExpensesCard} onCheckedChange={(v) => setShowExpensesCard(Boolean(v))} />
+                        <span>Expenses</span>
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <Checkbox
+                          checked={showMonthlySummaryCard}
+                          onCheckedChange={(v) => setShowMonthlySummaryCard(Boolean(v))}
+                        />
+                        <span>Monthly Summary</span>
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <Checkbox checked={showAdjustmentsCard} onCheckedChange={(v) => setShowAdjustmentsCard(Boolean(v))} />
+                        <span>Adjustments</span>
+                      </label>
+                    </div>
+                    <InviteToDashboard dashboardId={user?.id} />
 
-              <Button
-                onClick={() => setShowTransactionForm(true)}
-                className="bg-gradient-to-r from-primary to-accent hover:opacity-90 transition-opacity"
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                Add Transaction
-              </Button>
-              <Button variant="ghost" size="icon" onClick={signOut}>
-                <LogOut className="h-5 w-5" />
-              </Button>
+                    <DialogFooter>
+                      <Button
+                        variant="outline"
+                        onClick={async () => {
+                          try {
+                            const prefs = {
+                              cards: {
+                                showBalanceCard,
+                                showIncomeCard,
+                                showExpensesCard,
+                                showMonthlySummaryCard,
+                                showAdjustmentsCard,
+                              },
+                            };
+                            const { error } = await supabase
+                              .from("profiles")
+                              .update({ preferences: prefs })
+                              .eq("id", user?.id);
+                            if (error) throw error;
+                            toast({ title: "Preferences saved" });
+                          } catch (err: any) {
+                            toast({
+                              title: "Error saving preferences",
+                              description: err.message || String(err),
+                              variant: "destructive",
+                            });
+                          }
+                        }}
+                      >
+                        Save
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+                <ThemeToggle />
+                <div className="flex items-center">
+                  <Select value={period} onValueChange={(v) => setPeriod(v as any)}>
+                    <SelectTrigger className="mr-2 w-36 bg-input">
+                      <SelectValue placeholder="Period" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-popover">
+                      <SelectItem value="day">Day</SelectItem>
+                      <SelectItem value="week">Week</SelectItem>
+                      <SelectItem value="month">Month</SelectItem>
+                      <SelectItem value="year">Year</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button className="mr-2" variant="outline" size="sm">
+                      <Plus className="mr-2 h-4 w-4" /> Add view
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-md">
+                    <DialogHeader>
+                      <DialogTitle>Create custom view</DialogTitle>
+                      <DialogDescription>Create a wallet or insight view (pie or bar chart).</DialogDescription>
+                    </DialogHeader>
+
+                    <CreateViewForm
+                      transactions={transactions}
+                      onCreate={async (view) => {
+                        try {
+                          const next = [...customViews, view];
+                          setCustomViews(next);
+                          const prefs = { customViews: next };
+                          const { error } = await supabase
+                            .from("profiles")
+                            .update({ preferences: prefs })
+                            .eq("id", user?.id);
+                          if (error) throw error;
+                          toast({ title: "View saved" });
+                        } catch (err: any) {
+                          toast({
+                            title: "Error saving view",
+                            description: err.message || String(err),
+                            variant: "destructive",
+                          });
+                        }
+                      }}
+                    />
+                  </DialogContent>
+                </Dialog>
+
+                <Button
+                  onClick={() => setShowTransactionForm(true)}
+                  className="bg-gradient-to-r from-primary to-accent hover:opacity-90 transition-opacity"
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Transaction
+                </Button>
+                <Button variant="ghost" size="icon" onClick={signOut}>
+                  <LogOut className="h-5 w-5" />
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
-      </header>
+        </header>
 
-      <main className="container mx-auto px-4 py-8">
-        {/* Balance Overview */}
-        <div className="grid gap-6 md:grid-cols-3 mb-8">
-          {showBalanceCard && (
-            <Card className="p-6 bg-gradient-to-br from-card to-card/80 shadow-lg hover:shadow-xl transition-shadow">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-medium text-muted-foreground">Current Balance</p>
-                <AccountBalances />
-              </div>
-              <p className="text-3xl font-bold text-foreground">€{currentBalance.toFixed(2)}</p>
-              <p className="text-xs text-muted-foreground mt-2">All accounts combined</p>
-            </Card>
-          )}
+        {/* Main — fluid width (no container) */}
+        <main className="relative z-10 w-full px-4 py-8">
+          {/* Balance Overview */}
+          <div className="grid gap-6 md:grid-cols-3 mb-8">
+            {showBalanceCard && (
+              <Card className="p-6 bg-gradient-to-br from-card to-card/80 shadow-lg hover:shadow-xl transition-shadow">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-medium text-muted-foreground">Current Balance</p>
+                  <AccountBalances />
+                </div>
 
-          {showIncomeCard && (
-            <Card className="p-6 bg-gradient-to-br from-success/10 to-success/5 shadow-lg hover:shadow-xl transition-shadow border-success/20">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-medium text-success">{periodTitle(period)} Income</p>
-                <TrendingUp className="h-5 w-5 text-success" />
-              </div>
-              <p className="text-3xl font-bold text-success">€{monthlyIncome.toFixed(2)}</p>
-              <p className="text-xs text-success/70 mt-2">{periodTitle(period)}</p>
-            </Card>
-          )}
+                <p className="text-3xl font-bold text-foreground">€{currentBalance.toFixed(2)}</p>
+                <p className="text-xs text-muted-foreground mt-2">All accounts combined</p>
 
-          {showExpensesCard && (
-            <Card className="p-6 bg-gradient-to-br from-destructive/10 to-destructive/5 shadow-lg hover:shadow-xl transition-shadow border-destructive/20">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-medium text-destructive">{periodTitle(period)} Expenses</p>
-                <TrendingDown className="h-5 w-5 text-destructive" />
-              </div>
-              <p className="text-3xl font-bold text-destructive">€{monthlyExpenses.toFixed(2)}</p>
-              <p className="text-xs text-destructive/70 mt-2">{periodTitle(period)}</p>
-            </Card>
-          )}
-        </div>
+                {/* Put it here */}
+                <div className="mt-3">
+                  <BalanceAdjustment
+                    currentBalance={currentBalance}
+                    onSuccess={() => {
+                      setRefreshToken((r) => r + 1);
+                      fetchDashboardData();
+                    }}
+                  />
+                </div>
+              </Card>
+            )}
 
-        {/* Monthly Summary */}
-        <div className="mb-8">
-          <MonthlySummary onUpdate={fetchDashboardData} />
-        </div>
+            {showIncomeCard && (
+              <Card className="p-6 bg-gradient-to-br from-success/10 to-success/5 shadow-lg hover:shadow-xl transition-shadow border-success/20">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-medium text-success">{periodTitle(period)} Income</p>
+                  <TrendingUp className="h-5 w-5 text-success" />
+                </div>
+                <p className="text-3xl font-bold text-success">€{monthlyIncome.toFixed(2)}</p>
+                <p className="text-xs text-success/70 mt-2">{periodTitle(period)}</p>
+              </Card>
+            )}
 
-        {/* Adjustments */}
-        <div className="mb-8">
-          <AdjustmentList onUndo={fetchDashboardData} />
-        </div>
+            {showExpensesCard && (
+              <Card className="p-6 bg-gradient-to-br from-destructive/10 to-destructive/5 shadow-lg hover:shadow-xl transition-shadow border-destructive/20">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-medium text-destructive">{periodTitle(period)} Expenses</p>
+                  <TrendingDown className="h-5 w-5 text-destructive" />
+                </div>
+                <p className="text-3xl font-bold text-destructive">€{monthlyExpenses.toFixed(2)}</p>
+                <p className="text-xs text-destructive/70 mt-2">{periodTitle(period)}</p>
+              </Card>
+            )}
+          </div>
 
-        {/* Recent Transactions */}
-        <div>
+          {/* Monthly Summary */}
+          <div className="mb-8">
+            <MonthlySummary onUpdate={fetchDashboardData} />
+          </div>
+
+          {/* Adjustments */}
+          <div className="mb-8">
+            <AdjustmentList onUndo={fetchDashboardData} />
+          </div>
+
+          {/* Recent Transactions */}
+          <div>
             <TransactionList onUpdate={fetchDashboardData} refreshToken={refreshToken} />
-        </div>
-      </main>
+          </div>
+        </main>
 
-      {/* Transaction Form Modal */}
+        {/* Transaction Form Modal */}
         {showTransactionForm && (
-        <TransactionForm 
-          onClose={() => setShowTransactionForm(false)} 
-          onSuccess={handleTransactionAddedWithRefresh}
-        />
-      )}
+          <TransactionForm
+            onClose={() => setShowTransactionForm(false)}
+            onSuccess={handleTransactionAddedWithRefresh}
+          />
+        )}
       </div>
     </LeftNav>
   );
