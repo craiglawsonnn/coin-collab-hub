@@ -39,17 +39,21 @@ export default function InviteToDashboard({ dashboardId }: InviteToDashboardProp
     return () => clearTimeout(t);
   }, [query]);
 
-  const sendInvite = async (userId: string) => {
+  const sendInvite = async (userId: string, role: "viewer" | "editor" = "viewer") => {
     try {
-      // attempt to insert a dashboard_shares row if the table exists
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not authenticated");
+      
       const payload = {
-        dashboard_id: dashboardId || "default",
-        user_id: userId,
-        role: "viewer",
+        owner_id: user.id,
+        shared_with_user_id: userId,
+        role: role,
       };
       const { error } = await supabase.from("dashboard_shares").insert(payload);
       if (error) throw error;
-      toast({ title: "Invite sent" });
+      toast({ title: "Invite sent", description: `Dashboard shared as ${role}` });
+      setQuery("");
+      setResults([]);
     } catch (err: any) {
       toast({ title: "Error sending invite", description: err?.message || String(err), variant: "destructive" });
     }
@@ -76,12 +80,15 @@ export default function InviteToDashboard({ dashboardId }: InviteToDashboardProp
             {loading && <div className="text-sm text-muted-foreground">Searching…</div>}
             {!loading && results.length === 0 && query && <div className="text-sm text-muted-foreground">No users found</div>}
             {results.map((r) => (
-              <div key={r.id} className="flex items-center justify-between">
-                <div>
+              <div key={r.id} className="flex items-center justify-between gap-2">
+                <div className="flex-1">
                   <div className="font-medium">{r.full_name || r.email}</div>
                   <div className="text-xs text-muted-foreground">{r.email}</div>
                 </div>
-                <Button size="sm" onClick={() => sendInvite(r.id)}>Invite</Button>
+                <div className="flex gap-1">
+                  <Button size="sm" variant="outline" onClick={() => sendInvite(r.id, "viewer")}>View</Button>
+                  <Button size="sm" onClick={() => sendInvite(r.id, "editor")}>Edit</Button>
+                </div>
               </div>
             ))}
           </div>

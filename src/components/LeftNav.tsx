@@ -36,44 +36,25 @@ export default function LeftNav({ children }: { children?: React.ReactNode }) {
     const load = async () => {
       setLoadingShared(true);
       try {
-        /**
-         * Adjust this query to match your schema.
-         * Common patterns:
-         *  - "dashboard_shares" join "dashboards"
-         *  - or a view like "v_shared_dashboards"
-         */
-        let rows: SharedDash[] = [];
-
-        // Try a likely view first
-        let { data, error } = await supabase
-          .from("v_shared_dashboards")
-          .select("id,name,owner")
-          .eq("member_id", user.id);
+        // Fetch dashboards shared with current user
+        const { data, error } = await supabase
+          .from("dashboard_shares")
+          .select("owner_id, role, profiles!dashboard_shares_owner_id_fkey(full_name, email)")
+          .eq("shared_with_user_id", user.id);
 
         if (error) {
-          // Fallback: try a share table + RPC-ish join done client side (best-effort)
-          const share = await supabase
-            .from("dashboard_shares")
-            .select("dashboard_id, dashboard_name, owner_name")
-            .eq("member_id", user.id);
-
-          if (!share.error && share.data) {
-            rows = share.data.map((r: any) => ({
-              id: r.dashboard_id,
-              name: r.dashboard_name ?? "Shared dashboard",
-              owner: r.owner_name ?? undefined,
-            }));
-          }
+          console.error("Error loading shared dashboards:", error);
+          setShared([]);
         } else if (data) {
-          rows = data.map((r: any) => ({
-            id: r.id,
-            name: r.name ?? "Shared dashboard",
-            owner: r.owner ?? undefined,
+          const rows = data.map((share: any) => ({
+            id: share.owner_id,
+            name: share.profiles?.full_name || share.profiles?.email || "Shared Dashboard",
+            owner: share.profiles?.email || share.owner_id,
           }));
+          setShared(rows);
         }
-
-        setShared(rows);
-      } catch {
+      } catch (err) {
+        console.error("Error:", err);
         setShared([]);
       } finally {
         setLoadingShared(false);

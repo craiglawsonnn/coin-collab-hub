@@ -14,29 +14,97 @@ export type Database = {
   }
   public: {
     Tables: {
+      balance_adjustments: {
+        Row: {
+          amount: number
+          as_of: string
+          created_at: string | null
+          id: string
+          note: string | null
+          transaction_id: string
+          undone_at: string | null
+          undone_by: string | null
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          as_of?: string
+          created_at?: string | null
+          id?: string
+          note?: string | null
+          transaction_id: string
+          undone_at?: string | null
+          undone_by?: string | null
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          as_of?: string
+          created_at?: string | null
+          id?: string
+          note?: string | null
+          transaction_id?: string
+          undone_at?: string | null
+          undone_by?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "balance_adjustments_transaction_id_fkey"
+            columns: ["transaction_id"]
+            isOneToOne: false
+            referencedRelation: "transactions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dashboard_shares: {
+        Row: {
+          created_at: string | null
+          id: string
+          owner_id: string
+          role: Database["public"]["Enums"]["dashboard_role"]
+          shared_with_user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          owner_id: string
+          role?: Database["public"]["Enums"]["dashboard_role"]
+          shared_with_user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          owner_id?: string
+          role?: Database["public"]["Enums"]["dashboard_role"]
+          shared_with_user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string | null
           email: string | null
           full_name: string | null
-          preferences: Json | null
           id: string
+          preferences: Json | null
           updated_at: string | null
         }
         Insert: {
           created_at?: string | null
           email?: string | null
           full_name?: string | null
-          preferences?: Json | null
           id: string
+          preferences?: Json | null
           updated_at?: string | null
         }
         Update: {
           created_at?: string | null
           email?: string | null
           full_name?: string | null
-          preferences?: Json | null
           id?: string
+          preferences?: Json | null
           updated_at?: string | null
         }
         Relationships: []
@@ -92,30 +160,6 @@ export type Database = {
         }
         Relationships: []
       }
-      dashboard_shares: {
-        Row: {
-          id: string
-          dashboard_id: string
-          user_id: string
-          role: string
-          created_at: string | null
-        }
-        Insert: {
-          id?: string
-          dashboard_id: string
-          user_id: string
-          role?: string
-          created_at?: string | null
-        }
-        Update: {
-          id?: string
-          dashboard_id?: string
-          user_id?: string
-          role?: string
-          created_at?: string | null
-        }
-        Relationships: []
-      }
     }
     Views: {
       [_ in never]: never
@@ -124,7 +168,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      dashboard_role: "viewer" | "editor" | "admin"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -251,6 +295,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      dashboard_role: ["viewer", "editor", "admin"],
+    },
   },
 } as const

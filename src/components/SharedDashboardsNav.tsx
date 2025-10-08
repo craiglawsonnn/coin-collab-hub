@@ -1,11 +1,9 @@
 import { useState, useEffect } from "react";
 import { Drawer, DrawerTrigger, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription, DrawerFooter } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
-import { List } from "@/components/ui/list";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
-import { Sidebar } from "@/components/ui/sidebar";
 import { Menu } from "lucide-react";
 
 export default function SharedDashboardsNav() {
@@ -23,8 +21,8 @@ export default function SharedDashboardsNav() {
         // get dashboards shared with current user, join owner profiles
         const { data } = await supabase
           .from("dashboard_shares")
-          .select("dashboard_id,user_id,role,profiles(id,full_name,email)")
-          .eq("user_id", user?.id)
+          .select("owner_id, role, profiles!dashboard_shares_owner_id_fkey(id, full_name, email)")
+          .eq("shared_with_user_id", user?.id)
           .limit(50);
         setShared((data || []) as any[]);
       } catch (err) {
@@ -69,10 +67,10 @@ export default function SharedDashboardsNav() {
               {loading && <div className="text-sm text-muted-foreground">Loading…</div>}
               {!loading && shared.length === 0 && <div className="text-sm text-muted-foreground">No shared dashboards</div>}
               {shared.map((s) => {
-                const owner = s.profiles || { full_name: s.dashboard_id };
+                const owner = s.profiles || { full_name: s.owner_id };
                 return (
-                  <Button key={s.dashboard_id} variant="ghost" size="sm" className="w-full text-left" onClick={() => goTo(s.dashboard_id)}>
-                    {owner.full_name || owner.email || s.dashboard_id}
+                  <Button key={s.owner_id} variant="ghost" size="sm" className="w-full text-left" onClick={() => goTo(s.owner_id)}>
+                    {owner.full_name || owner.email || s.owner_id} ({s.role})
                   </Button>
                 );
               })}
