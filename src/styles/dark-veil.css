@@ -1,6 +1,7 @@
-.darkveil-canvas {
+.darkveil-canvas{
+  background: transparent;
+  display: block;
   width: 100%;
   height: 100%;
-  display: block;
-  pointer-events: none; /* never block clicks */
+  /* don't force position: fixed here */
 }

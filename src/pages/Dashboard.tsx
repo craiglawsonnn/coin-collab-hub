@@ -9,6 +9,7 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 import { Plus, TrendingUp, TrendingDown, LogOut, Settings } from "lucide-react";
+
 import InviteToDashboard from "@/components/InviteToDashboard";
 import {
   Dialog,
@@ -34,9 +35,8 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
-/* Background veils + mobile flag */
+/* Background veil + mobile flag */
 import DarkVeil from "@/components/DarkVeil";
-import LightVeil from "@/components/LightVeil";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 type Period = "day" | "week" | "month" | "year";
@@ -75,6 +75,19 @@ const Dashboard = () => {
       typeof document !== "undefined" &&
       document.documentElement.classList.contains("dark")
   );
+
+  // ✅ debug log when theme flips
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      console.log(
+        "[DBG] isDark:",
+        isDark,
+        "| html.class:",
+        document.documentElement.className
+      );
+    }
+  }, [isDark]);
+
   useEffect(() => {
     const root = document.documentElement;
     const obs = new MutationObserver(() =>
@@ -118,7 +131,6 @@ const Dashboard = () => {
 
   useEffect(() => {
     if (user) fetchDashboardData();
-    // re-run when either period changes (they're independent)
   }, [user, incomePeriod, expensePeriod]);
 
   const inPeriod = (dateStr: string, p: Period) => {
@@ -187,9 +199,9 @@ const Dashboard = () => {
       ? "This month"
       : "This year";
 
-  // --- NEW: local apply for a single inserted transaction row (if provided) ---
+  // --- local apply for a single inserted transaction row (if provided)
   const applyLocalTx = (tx: any) => {
-    setTransactions((prev) => [tx, ...prev]); // keep local list coherent
+    setTransactions((prev) => [tx, ...prev]);
     setCurrentBalance((prev) => prev + Number(tx.net_flow || 0));
 
     if (inPeriod(tx.date, incomePeriod)) {
@@ -200,32 +212,20 @@ const Dashboard = () => {
     }
   };
 
-  // --- UPDATED: handle balance adjustment success ---
-  // If your BalanceAdjustment calls onSuccess(txRow), we'll apply locally.
-  // If not, we fall back to one dashboard fetch to update the cards.
+  // --- after balance adjustment
   const handleBalanceAdjusted = (tx?: any) => {
     if (tx) {
       applyLocalTx(tx);
     } else {
-      // Single dashboard fetch to update cards (list will refetch separately)
       fetchDashboardData();
     }
-    // Let TransactionList refetch itself once
     setRefreshToken((r) => r + 1);
   };
 
-  // --- UPDATED: after adding a transaction ---
+  // --- after adding a transaction
   const handleTransactionAddedWithRefresh = (tx?: any) => {
     setShowTransactionForm(false);
-
-    // If your TransactionForm returns the new row, uncomment to avoid a fetch:
-    // if (tx) applyLocalTx(tx);
-
-    // Keep behavior identical to your Recent Transactions UX:
     setRefreshToken((r) => r + 1);
-
-    // If you want the cards to refresh from DB after add, uncomment:
-    // fetchDashboardData();
   };
 
   if (loading) {
@@ -239,30 +239,52 @@ const Dashboard = () => {
 
   return (
     <LeftNav>
-      {/* keep background exactly how you had it */}
+      {/* page shell */}
       <div className="relative min-h-screen bg-background overflow-hidden">
-        <div className="absolute inset-0 pointer-events-none">
-          {isDark ? (
-            <DarkVeil
-              key="dark"
-              className="h-full w-full"
-              hueShift={0}
-              noiseIntensity={0.03}
-              scanlineIntensity={0.06}
-              scanlineFrequency={2.8}
-              speed={isMobile ? 0.35 : 0.5}
-              warpAmount={0.08}
-              resolutionScale={isMobile ? 0.75 : 1}
-            />
-          ) : (
-            <LightVeil
-              key="light"
-              className="h-full w-full"
-              speed={isMobile ? 0.35 : 0.5}
-              resolutionScale={isMobile ? 0.75 : 1}
-            />
-          )}
+        {/* Background (behind everything on the page) */}
+        <div className="fixed inset-0 z-0 pointer-events-none">
+          <div className="absolute inset-0 isolate">
+            {/* Wrap the canvas so we can filter it in light mode without touching UI */}
+            <div
+              className={[
+                "absolute inset-0 will-change-[filter,opacity] transition-[filter,opacity] duration-300",
+                !isDark ? "opacity-95" : "opacity-100",
+              ].join(" ")}
+              style={
+                !isDark
+                  ? { filter: "invert(1) hue-rotate(240deg) saturate(1.8) brightness(0.75)" }
+                  : undefined
+              }
+            >
+              <DarkVeil
+                className="h-full w-full"
+                hueShift={1}
+                noiseIntensity={0.03}
+                scanlineIntensity={0.06}
+                scanlineFrequency={2.8}
+                speed={isMobile ? 0.35 : 0.5}
+                warpAmount={0.08}
+                resolutionScale={isMobile ? 0.75 : 1}
+                opacity={0.26} 
+              />
+            </div>
+
+            {/* Optional pastel lift in light mode (doesn't affect UI) */}
+            {!isDark && (
+              <div
+                className="absolute inset-0 pointer-events-none transition-opacity duration-300"
+                style={{
+                  mixBlendMode: "screen",
+                  opacity: 0.45,
+                  background:
+                    "radial-gradient(120% 90% at 15% 0%, rgba(20,184,166,.20) 0%, transparent 60%)," +
+                    "radial-gradient(110% 80% at 85% 20%, rgba(147,51,234,.16) 0%, transparent 65%)",
+                }}
+              />
+            )}
+          </div>
         </div>
+
 
         {/* Header — fluid width (no container) */}
         <header className="relative z-10 border-b bg-card/80 backdrop-blur">
@@ -420,7 +442,7 @@ const Dashboard = () => {
                 <div className="mt-3">
                   <BalanceAdjustment
                     currentBalance={currentBalance}
-                    onSuccess={handleBalanceAdjusted} // <— updated
+                    onSuccess={handleBalanceAdjusted}
                   />
                 </div>
               </Card>
@@ -434,13 +456,13 @@ const Dashboard = () => {
                 </div>
                 <p className="text-3xl font-bold text-success">€{incomeTotal.toFixed(2)}</p>
                 <p className="text-xs text-success/70 mt-2">{titleFor(incomePeriod)}</p>
-
                 {/* Income period selector */}
-                <div className="mt-3 w-40">
+                <div className="mt-3 w-full max-w-[9.5rem] self-start">
                   <Select value={incomePeriod} onValueChange={(v) => setIncomePeriod(v as any)}>
                     <SelectTrigger
                       className="
-                        h-9 border
+                        h-8 px-3 text-[13px] rounded-lg
+                        border
                         bg-success/15 hover:bg-success/20 data-[state=open]:bg-success/25
                         text-success border-success/30
                         dark:bg-success/20 dark:hover:bg-success/25 dark:data-[state=open]:bg-success/30
@@ -468,13 +490,13 @@ const Dashboard = () => {
                 </div>
                 <p className="text-3xl font-bold text-destructive">€{expenseTotal.toFixed(2)}</p>
                 <p className="text-xs text-destructive/70 mt-2">{titleFor(expensePeriod)}</p>
-
                 {/* Expense period selector */}
-                <div className="mt-3 w-40">
+                <div className="mt-3 w-full max-w-[9.5rem] self-start">
                   <Select value={expensePeriod} onValueChange={(v) => setExpensePeriod(v as any)}>
                     <SelectTrigger
                       className="
-                        h-9 border
+                        h-8 px-3 text-[13px] rounded-lg
+                        border
                         bg-destructive/15 hover:bg-destructive/20 data-[state=open]:bg-destructive/25
                         text-destructive border-destructive/30
                         dark:bg-destructive/20 dark:hover:bg-destructive/25 dark:data-[state=open]:bg-destructive/30
@@ -491,6 +513,7 @@ const Dashboard = () => {
                     </SelectContent>
                   </Select>
                 </div>
+
               </Card>
             )}
           </div>
@@ -515,9 +538,31 @@ const Dashboard = () => {
         {showTransactionForm && (
           <TransactionForm
             onClose={() => setShowTransactionForm(false)}
-            onSuccess={handleTransactionAddedWithRefresh} // <— updated
+            onSuccess={handleTransactionAddedWithRefresh}
           />
         )}
+      </div>
+
+      {/* DEBUG: shows which branch you're in + current <html> classes */}
+      <div
+        style={{
+          position: "fixed",
+          right: 8,
+          bottom: 8,
+          zIndex: 99999,
+          fontSize: 12,
+          padding: "6px 8px",
+          borderRadius: 6,
+          background: "rgba(0,0,0,0.7)",
+          color: "white",
+          fontFamily:
+            "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+          pointerEvents: "none",
+        }}
+      >
+        isDark: {String(isDark)}
+        <br />
+        html.class: {typeof document !== "undefined" ? document.documentElement.className : "(ssr)"}
       </div>
     </LeftNav>
   );

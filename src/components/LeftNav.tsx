@@ -1,6 +1,14 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Home, Layers, Users, Settings, LayoutGrid, UserPlus } from "lucide-react";
+import {
+  Home,
+  Layers,
+  Users,
+  Settings,
+  LayoutGrid,
+  UserPlus,
+  Menu, // 3-stack burger
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import InviteManager from "@/components/InviteManager";
 import {
@@ -14,6 +22,7 @@ import {
   SidebarProvider,
   SidebarTrigger,
   SidebarInset,
+  useSidebar, // hook from your sidebar lib
 } from "@/components/ui/sidebar";
 import {
   Accordion,
@@ -38,10 +47,11 @@ export default function LeftNav({ children }: { children?: React.ReactNode }) {
     const load = async () => {
       setLoadingShared(true);
       try {
-        // Fetch dashboards shared with current user (only accepted)
         const { data, error } = await supabase
           .from("dashboard_shares")
-          .select("owner_id, role, status, profiles!dashboard_shares_owner_id_fkey(full_name, email)")
+          .select(
+            "owner_id, role, status, profiles!dashboard_shares_owner_id_fkey(full_name, email)"
+          )
           .eq("shared_with_user_id", user.id)
           .eq("status", "accepted");
 
@@ -51,7 +61,10 @@ export default function LeftNav({ children }: { children?: React.ReactNode }) {
         } else if (data) {
           const rows = data.map((share: any) => ({
             id: share.owner_id,
-            name: share.profiles?.full_name || share.profiles?.email || "Shared Dashboard",
+            name:
+              share.profiles?.full_name ||
+              share.profiles?.email ||
+              "Shared Dashboard",
             owner: share.profiles?.email || share.owner_id,
           }));
           setShared(rows);
@@ -63,18 +76,21 @@ export default function LeftNav({ children }: { children?: React.ReactNode }) {
         setLoadingShared(false);
       }
     };
-
     load();
   }, [user?.id]);
 
   return (
     <SidebarProvider>
+      {/* Floating burger — only when collapsed */}
+      <FloatingBurger />
+
       <div className="min-h-screen flex w-full bg-background">
         {/* Sidebar */}
         <Sidebar>
           <SidebarHeader>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between h-14 px-3">
               <div className="text-lg font-bold">CoinCollab</div>
+              <HeaderBurger />
             </div>
           </SidebarHeader>
 
@@ -124,14 +140,14 @@ export default function LeftNav({ children }: { children?: React.ReactNode }) {
                     </AccordionContent>
                   </AccordionItem>
 
-                  {/* Users group (shared dashboards) */}
+                  {/* Users group */}
                   <AccordionItem value="users" className="border-none">
                     <AccordionTrigger className="px-2 py-2 hover:no-underline">
                       <div className="flex items-center gap-2">
                         <Users className="h-4 w-4" />
                         <span>Users</span>
                       </div>
-                      </AccordionTrigger>
+                    </AccordionTrigger>
                     <AccordionContent className="pb-2">
                       <div className="flex flex-col gap-1 pl-8 pr-2">
                         <Button
@@ -181,7 +197,6 @@ export default function LeftNav({ children }: { children?: React.ReactNode }) {
 
           <SidebarFooter>
             <div className="flex items-center gap-2">
-              <SidebarTrigger />
               <Button
                 variant="ghost"
                 size="sm"
@@ -204,4 +219,76 @@ export default function LeftNav({ children }: { children?: React.ReactNode }) {
       <InviteManager open={inviteOpen} onOpenChange={setInviteOpen} />
     </SidebarProvider>
   );
+}
+
+/** Header burger that calls the correct toggle API across sidebar variants. */
+function HeaderBurger() {
+  const api = safeSidebarApi();
+
+  // If the hook is missing entirely, fall back to the library trigger (built-in icon).
+  if (!api) return <SidebarTrigger className="shrink-0" aria-label="Toggle sidebar" />;
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="shrink-0"
+      aria-label="Toggle sidebar"
+      onClick={api.smartToggle}
+      title="Toggle menu"
+    >
+      <Menu className="h-5 w-5" />
+    </Button>
+  );
+}
+
+/** Floating burger — only visible when the sidebar is collapsed.
+ *  Positioned below the page title so it won’t cover it. */
+function FloatingBurger() {
+  const api = safeSidebarApi();
+  if (!api) return null;           // no API -> nothing to render
+  if (api.open) return null;       // only show when closed/collapsed
+
+  return (
+    <div className="fixed left-3 top-16 md:top-20 z-50 pointer-events-auto">
+      <Button
+        variant="default"
+        size="icon"
+        className="h-10 w-10 rounded-full shadow-lg bg-primary text-primary-foreground hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        aria-label="Open sidebar"
+        title="Open menu"
+        onClick={api.smartToggle}
+      >
+        <Menu className="h-5 w-5" />
+      </Button>
+    </div>
+  );
+}
+
+/** Normalizes different sidebar API shapes across shadcn variants. */
+function safeSidebarApi():
+  | { open: boolean; smartToggle: () => void }
+  | undefined {
+  try {
+    const ctx: any = useSidebar();
+    const open: boolean =
+      typeof ctx?.open === "boolean"
+        ? ctx.open
+        : typeof ctx?.state === "string"
+        ? ctx.state === "open"
+        : !!ctx?.isOpen;
+
+    const smartToggle = () => {
+      // Try common function names, then fall back to setOpen
+      if (typeof ctx?.toggle === "function") return ctx.toggle();
+      if (typeof ctx?.toggleSidebar === "function") return ctx.toggleSidebar();
+      if (typeof ctx?.setOpen === "function") return ctx.setOpen(!open);
+      if (typeof ctx?.setCollapsed === "function") return ctx.setCollapsed(open); // some variants invert meaning
+      // absolute last resort: click a hidden SidebarTrigger if you keep one in DOM
+    };
+
+    return { open, smartToggle };
+  } catch {
+    return undefined;
+  }
 }
