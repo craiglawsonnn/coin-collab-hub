@@ -49,8 +49,9 @@ export default function InviteManager({ open, onOpenChange }: { open: boolean; o
     const t = setTimeout(async () => {
       setLoading(true);
       try {
+        // Use searchable_profiles view for optimized search
         const { data, error } = await supabase
-          .from("profiles")
+          .from("searchable_profiles")
           .select("id,full_name,email")
           .neq("id", user?.id || "")
           .or(`full_name.ilike.%${query}%,email.ilike.%${query}%`)

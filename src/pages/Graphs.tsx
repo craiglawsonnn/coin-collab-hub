@@ -186,7 +186,7 @@ function ChartRenderer({
 
       <div className="h-[280px]">
         <ResponsiveContainer width="100%" height="100%">
-          {cfg.type === "bar" && (
+          {cfg.type === "bar" ? (
             <BarChart data={data}>
               <XAxis dataKey="label" />
               <YAxis />
@@ -199,9 +199,7 @@ function ChartRenderer({
                 <Bar dataKey="expense" name="Expense" fill={ec} />
               )}
             </BarChart>
-          )}
-
-          {cfg.type === "line" && (
+          ) : cfg.type === "line" ? (
             <LineChart data={data}>
               <XAxis dataKey="label" />
               <YAxis />
@@ -214,9 +212,7 @@ function ChartRenderer({
                 <Line type="monotone" dataKey="expense" name="Expense" stroke={ec} dot={false} />
               )}
             </LineChart>
-          )}
-
-          {cfg.type === "pie" && (
+          ) : (
             <PieChart>
               <Tooltip />
               <Legend />
