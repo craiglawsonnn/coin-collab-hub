@@ -31,7 +31,7 @@ import ThemeToggle from "@/components/ThemeToggle";
 import BalanceAdjustment from "@/components/BalanceAdjustment";
 import LeftNav from "@/components/LeftNav";
 import { useAuth } from "@/hooks/useAuth";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -59,6 +59,10 @@ const Dashboard = () => {
   const { user, loading, signOut } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
+  
+  // Determine which dashboard we're viewing (own or shared)
+  const viewingOwnerId = searchParams.get("owner") || user?.id;
 
   // card visibility preferences
   const [showBalanceCard, setShowBalanceCard] = useState(true);
@@ -131,7 +135,7 @@ const Dashboard = () => {
 
   useEffect(() => {
     if (user) fetchDashboardData();
-  }, [user, incomePeriod, expensePeriod]);
+  }, [user, incomePeriod, expensePeriod, viewingOwnerId]);
 
   const inPeriod = (dateStr: string, p: Period) => {
     const now = new Date();
@@ -159,9 +163,11 @@ const Dashboard = () => {
 
   const fetchDashboardData = async () => {
     try {
+      // Filter transactions by the owner we're viewing
       const { data, error } = await supabase
         .from("transactions")
         .select("*")
+        .eq("user_id", viewingOwnerId)
         .order("date", { ascending: false });
       if (error) throw error;
 
@@ -291,7 +297,10 @@ const Dashboard = () => {
           <div className="w-full px-4 py-4">
             <div className="flex items-center justify-between">
               <div>
-                <h1 className="text-2xl font-bold text-foreground">Budget Tracker</h1>
+                <h1 className="text-2xl font-bold text-foreground">
+                  Budget Tracker
+                  {viewingOwnerId !== user?.id && <span className="text-sm font-normal text-muted-foreground ml-2">(Viewing shared dashboard)</span>}
+                </h1>
                 <p className="text-sm text-muted-foreground">Track your finances together</p>
               </div>
               <div className="flex gap-2">

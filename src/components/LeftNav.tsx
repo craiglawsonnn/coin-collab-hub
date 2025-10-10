@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Home,
   Layers,
@@ -38,6 +38,9 @@ type SharedDash = { id: string; name: string; owner?: string };
 export default function LeftNav({ children }: { children?: React.ReactNode }) {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
+  const ownerParam = searchParams.get("owner");
+  
   const [shared, setShared] = useState<SharedDash[]>([]);
   const [loadingShared, setLoadingShared] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -47,27 +50,36 @@ export default function LeftNav({ children }: { children?: React.ReactNode }) {
     const load = async () => {
       setLoadingShared(true);
       try {
-        const { data, error } = await supabase
+        const { data: shares, error } = await supabase
           .from("dashboard_shares")
-          .select(
-            "owner_id, role, status, profiles!dashboard_shares_owner_id_fkey(full_name, email)"
-          )
+          .select("owner_id, role, status")
           .eq("shared_with_user_id", user.id)
           .eq("status", "accepted");
 
         if (error) {
           console.error("Error loading shared dashboards:", error);
           setShared([]);
-        } else if (data) {
-          const rows = data.map((share: any) => ({
-            id: share.owner_id,
-            name:
-              share.profiles?.full_name ||
-              share.profiles?.email ||
-              "Shared Dashboard",
-            owner: share.profiles?.email || share.owner_id,
-          }));
+        } else if (shares && shares.length > 0) {
+          // Fetch owner profiles from searchable_profiles
+          const ownerIds = shares.map(s => s.owner_id);
+          const { data: profiles } = await supabase
+            .from("searchable_profiles")
+            .select("id, full_name, email")
+            .in("id", ownerIds);
+
+          const profileMap = new Map(profiles?.map(p => [p.id, p]) || []);
+
+          const rows = shares.map((share: any) => {
+            const profile = profileMap.get(share.owner_id);
+            return {
+              id: share.owner_id,
+              name: profile?.full_name || profile?.email || "Shared Dashboard",
+              owner: profile?.email || share.owner_id,
+            };
+          });
           setShared(rows);
+        } else {
+          setShared([]);
         }
       } catch (err) {
         console.error("Error:", err);
@@ -113,7 +125,7 @@ export default function LeftNav({ children }: { children?: React.ReactNode }) {
                           variant="ghost"
                           size="sm"
                           className="justify-start"
-                          onClick={() => navigate("/")}
+                          onClick={() => navigate(ownerParam ? `/?owner=${ownerParam}` : "/")}
                         >
                           <LayoutGrid className="mr-2 h-4 w-4" />
                           Main dashboard
@@ -122,7 +134,7 @@ export default function LeftNav({ children }: { children?: React.ReactNode }) {
                           variant="ghost"
                           size="sm"
                           className="justify-start"
-                          onClick={() => navigate("/transactions")}
+                          onClick={() => navigate(ownerParam ? `/transactions?owner=${ownerParam}` : "/transactions")}
                         >
                           <Layers className="mr-2 h-4 w-4" />
                           Transactions
@@ -131,7 +143,7 @@ export default function LeftNav({ children }: { children?: React.ReactNode }) {
                           variant="ghost"
                           size="sm"
                           className="justify-start"
-                          onClick={() => navigate("/graphs")}
+                          onClick={() => navigate(ownerParam ? `/graphs?owner=${ownerParam}` : "/graphs")}
                         >
                           <Layers className="mr-2 h-4 w-4" />
                           Graphs
@@ -179,7 +191,7 @@ export default function LeftNav({ children }: { children?: React.ReactNode }) {
                               variant="ghost"
                               size="sm"
                               className="justify-start"
-                              onClick={() => navigate(`/dashboards/${d.id}`)}
+                              onClick={() => navigate(`/?owner=${d.id}`)}
                               title={d.owner ? `Owner: ${d.owner}` : undefined}
                             >
                               <LayoutGrid className="mr-2 h-4 w-4" />

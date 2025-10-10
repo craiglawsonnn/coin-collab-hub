@@ -18,13 +18,34 @@ export default function SharedDashboardsNav() {
     const fetchShared = async () => {
       setLoading(true);
       try {
-        // get dashboards shared with current user, join owner profiles
-        const { data } = await supabase
+        // get dashboards shared with current user that are accepted
+        const { data: shares } = await supabase
           .from("dashboard_shares")
-          .select("owner_id, role, profiles!dashboard_shares_owner_id_fkey(id, full_name, email)")
+          .select("owner_id, role")
           .eq("shared_with_user_id", user?.id)
+          .eq("status", "accepted")
           .limit(50);
-        setShared((data || []) as any[]);
+
+        if (!shares || shares.length === 0) {
+          setShared([]);
+          return;
+        }
+
+        // Fetch owner profiles from searchable_profiles
+        const ownerIds = shares.map(s => s.owner_id);
+        const { data: profiles } = await supabase
+          .from("searchable_profiles")
+          .select("id, full_name, email")
+          .in("id", ownerIds);
+
+        const profileMap = new Map(profiles?.map(p => [p.id, p]) || []);
+        
+        const sharesWithProfiles = shares.map(s => ({
+          ...s,
+          profiles: profileMap.get(s.owner_id) || { id: s.owner_id, full_name: null, email: null }
+        }));
+
+        setShared(sharesWithProfiles);
       } catch (err) {
         setShared([]);
       } finally {

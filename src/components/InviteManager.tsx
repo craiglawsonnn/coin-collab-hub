@@ -82,13 +82,13 @@ export default function InviteManager({ open, onOpenChange }: { open: boolean; o
         .select("id, owner_id, shared_with_user_id, role, status")
         .eq("shared_with_user_id", user.id);
 
-      // Fetch profile data for all relevant users
+      // Fetch profile data for all relevant users using searchable_profiles view
       const userIds = new Set<string>();
       (sent || []).forEach(s => userIds.add(s.shared_with_user_id));
       (received || []).forEach(r => userIds.add(r.owner_id));
 
       const { data: profiles } = await supabase
-        .from("profiles")
+        .from("searchable_profiles")
         .select("id, full_name, email")
         .in("id", Array.from(userIds));
 

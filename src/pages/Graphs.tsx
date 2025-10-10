@@ -3,6 +3,7 @@ import LeftNav from "@/components/LeftNav";
 import ThemeToggle from "@/components/ThemeToggle";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useSearchParams } from "react-router-dom";
 import { Pencil } from "lucide-react";
 
 import { Card } from "@/components/ui/card";
@@ -458,6 +459,8 @@ function ChartColorsEditor({
 
 export default function Graphs() {
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
+  const viewingOwnerId = searchParams.get("owner") || user?.id;
   const [transactions, setTransactions] = useState<Tx[]>([]);
   const [charts, setCharts] = useState<ChartConfig[]>([]);
   const [builderOpen, setBuilderOpen] = useState(false);
@@ -475,10 +478,11 @@ export default function Graphs() {
       const { data, error } = await supabase
         .from("transactions")
         .select("id,date,category,payment_method,net_income,expense")
+        .eq("user_id", viewingOwnerId)
         .order("date", { ascending: true });
       if (!error && data) setTransactions(data as Tx[]);
     })();
-  }, []);
+  }, [viewingOwnerId]);
 
   // load user views
   useEffect(() => {
