@@ -154,6 +154,66 @@ export type Database = {
         }
         Relationships: []
       }
+      recurring_transactions: {
+        Row: {
+          account: string
+          category: string
+          created_at: string
+          description: string | null
+          end_date: string | null
+          expense: number | null
+          frequency: Database["public"]["Enums"]["recurrence_frequency"]
+          gross_income: number | null
+          id: string
+          is_active: boolean
+          net_income: number | null
+          next_occurrence_date: string
+          payment_method: string
+          start_date: string
+          tax_paid: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          account: string
+          category: string
+          created_at?: string
+          description?: string | null
+          end_date?: string | null
+          expense?: number | null
+          frequency: Database["public"]["Enums"]["recurrence_frequency"]
+          gross_income?: number | null
+          id?: string
+          is_active?: boolean
+          net_income?: number | null
+          next_occurrence_date: string
+          payment_method: string
+          start_date?: string
+          tax_paid?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          account?: string
+          category?: string
+          created_at?: string
+          description?: string | null
+          end_date?: string | null
+          expense?: number | null
+          frequency?: Database["public"]["Enums"]["recurrence_frequency"]
+          gross_income?: number | null
+          id?: string
+          is_active?: boolean
+          net_income?: number | null
+          next_occurrence_date?: string
+          payment_method?: string
+          start_date?: string
+          tax_paid?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       transactions: {
         Row: {
           account: string
@@ -201,6 +261,63 @@ export type Database = {
           payment_method?: string
           tax_paid?: number | null
           updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_accounts: {
+        Row: {
+          account_name: string
+          created_at: string
+          id: string
+          is_active: boolean
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          account_name: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          account_name?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_categories: {
+        Row: {
+          category_name: string
+          created_at: string
+          id: string
+          is_active: boolean
+          is_expense: boolean
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          category_name: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          is_expense?: boolean
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          category_name?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          is_expense?: boolean
+          updated_at?: string
           user_id?: string
         }
         Relationships: []
@@ -263,6 +380,13 @@ export type Database = {
     Enums: {
       dashboard_invite_status: "pending" | "accepted" | "rejected"
       dashboard_role: "viewer" | "editor" | "admin"
+      recurrence_frequency:
+        | "daily"
+        | "weekly"
+        | "biweekly"
+        | "monthly"
+        | "quarterly"
+        | "yearly"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -392,6 +516,14 @@ export const Constants = {
     Enums: {
       dashboard_invite_status: ["pending", "accepted", "rejected"],
       dashboard_role: ["viewer", "editor", "admin"],
+      recurrence_frequency: [
+        "daily",
+        "weekly",
+        "biweekly",
+        "monthly",
+        "quarterly",
+        "yearly",
+      ],
     },
   },
 } as const

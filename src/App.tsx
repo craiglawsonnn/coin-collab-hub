@@ -9,7 +9,8 @@ import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 import TransactionsPage from "./pages/Transactions";
-import Graphs from "./pages/Graphs"; // ← add this
+import Graphs from "./pages/Graphs";
+import Settings from "./pages/Settings";
 
 const queryClient = new QueryClient();
 
@@ -24,7 +25,8 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/transactions" element={<TransactionsPage />} />
-            <Route path="/graphs" element={<Graphs />} /> {/* ← new route */}
+            <Route path="/graphs" element={<Graphs />} />
+            <Route path="/settings" element={<Settings />} />
             {/* keep the catch-all at the end */}
             <Route path="*" element={<NotFound />} />
           </Routes>

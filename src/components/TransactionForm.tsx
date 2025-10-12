@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,7 @@ import {
 import { Card } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 
 interface TransactionFormProps {
   onClose: () => void;
@@ -21,6 +22,7 @@ interface TransactionFormProps {
 }
 
 export const TransactionForm = ({ onClose, onSuccess }: TransactionFormProps) => {
+  const { user } = useAuth();
   const [type, setType] = useState<"income" | "expense">("expense");
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
@@ -37,19 +39,45 @@ export const TransactionForm = ({ onClose, onSuccess }: TransactionFormProps) =>
     expense: "",
   });
 
-  const categories = [
-    "Salary",
-    "Rent",
-    "Groceries",
-    "Utilities",
-    "Crypto",
-    "Transport",
-    "Miscellaneous",
-    "Entertainment",
-  ];
+  const [categories, setCategories] = useState<string[]>([]);
+  const [accounts, setAccounts] = useState<string[]>([]);
+  const [loadingOptions, setLoadingOptions] = useState(true);
 
-  const accounts = ["Revolut", "BoI", "Cash", "Checking", "Savings"];
-  const paymentMethods = ["Revolut", "BoI", "Cash", "Crypto"];
+  useEffect(() => {
+    const loadOptions = async () => {
+      if (!user?.id) return;
+      
+      try {
+        const [categoriesRes, accountsRes] = await Promise.all([
+          supabase
+            .from("user_categories")
+            .select("category_name")
+            .eq("user_id", user.id)
+            .eq("is_active", true)
+            .order("category_name"),
+          supabase
+            .from("user_accounts")
+            .select("account_name")
+            .eq("user_id", user.id)
+            .eq("is_active", true)
+            .order("account_name"),
+        ]);
+
+        if (categoriesRes.data) {
+          setCategories(categoriesRes.data.map((c) => c.category_name));
+        }
+        if (accountsRes.data) {
+          setAccounts(accountsRes.data.map((a) => a.account_name));
+        }
+      } catch (error) {
+        console.error("Error loading options:", error);
+      } finally {
+        setLoadingOptions(false);
+      }
+    };
+
+    loadOptions();
+  }, [user?.id]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -149,16 +177,22 @@ export const TransactionForm = ({ onClose, onSuccess }: TransactionFormProps) =>
           {/* Category */}
           <div className="space-y-2">
             <Label htmlFor="category">Category</Label>
-            <Select value={formData.category} onValueChange={(value) => setFormData({ ...formData, category: value })} required>
+            <Select value={formData.category} onValueChange={(value) => setFormData({ ...formData, category: value })} required disabled={loadingOptions}>
               <SelectTrigger className="bg-input">
-                <SelectValue placeholder="Select category" />
+                <SelectValue placeholder={loadingOptions ? "Loading..." : "Select category"} />
               </SelectTrigger>
               <SelectContent className="bg-popover z-50">
-                {categories.map((cat) => (
-                  <SelectItem key={cat} value={cat}>
-                    {cat}
-                  </SelectItem>
-                ))}
+                {categories.length === 0 ? (
+                  <div className="p-2 text-sm text-muted-foreground">
+                    No categories. Add them in Settings.
+                  </div>
+                ) : (
+                  categories.map((cat) => (
+                    <SelectItem key={cat} value={cat}>
+                      {cat}
+                    </SelectItem>
+                  ))
+                )}
               </SelectContent>
             </Select>
           </div>
@@ -178,16 +212,22 @@ export const TransactionForm = ({ onClose, onSuccess }: TransactionFormProps) =>
           {/* Account */}
           <div className="space-y-2">
             <Label htmlFor="account">Account</Label>
-            <Select value={formData.account} onValueChange={(value) => setFormData({ ...formData, account: value })} required>
+            <Select value={formData.account} onValueChange={(value) => setFormData({ ...formData, account: value })} required disabled={loadingOptions}>
               <SelectTrigger className="bg-input">
-                <SelectValue placeholder="Select account" />
+                <SelectValue placeholder={loadingOptions ? "Loading..." : "Select account"} />
               </SelectTrigger>
               <SelectContent className="bg-popover z-50">
-                {accounts.map((acc) => (
-                  <SelectItem key={acc} value={acc}>
-                    {acc}
-                  </SelectItem>
-                ))}
+                {accounts.length === 0 ? (
+                  <div className="p-2 text-sm text-muted-foreground">
+                    No accounts. Add them in Settings.
+                  </div>
+                ) : (
+                  accounts.map((acc) => (
+                    <SelectItem key={acc} value={acc}>
+                      {acc}
+                    </SelectItem>
+                  ))
+                )}
               </SelectContent>
             </Select>
           </div>
@@ -195,16 +235,22 @@ export const TransactionForm = ({ onClose, onSuccess }: TransactionFormProps) =>
           {/* Payment Method */}
           <div className="space-y-2">
             <Label htmlFor="payment">Payment Method</Label>
-            <Select value={formData.paymentMethod} onValueChange={(value) => setFormData({ ...formData, paymentMethod: value })} required>
+            <Select value={formData.paymentMethod} onValueChange={(value) => setFormData({ ...formData, paymentMethod: value })} required disabled={loadingOptions}>
               <SelectTrigger className="bg-input">
-                <SelectValue placeholder="Select payment method" />
+                <SelectValue placeholder={loadingOptions ? "Loading..." : "Select payment method"} />
               </SelectTrigger>
               <SelectContent className="bg-popover z-50">
-                {paymentMethods.map((pm) => (
-                  <SelectItem key={pm} value={pm}>
-                    {pm}
-                  </SelectItem>
-                ))}
+                {accounts.length === 0 ? (
+                  <div className="p-2 text-sm text-muted-foreground">
+                    No accounts. Add them in Settings.
+                  </div>
+                ) : (
+                  accounts.map((pm) => (
+                    <SelectItem key={pm} value={pm}>
+                      {pm}
+                    </SelectItem>
+                  ))
+                )}
               </SelectContent>
             </Select>
           </div>
