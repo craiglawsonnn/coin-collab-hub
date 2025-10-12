@@ -1,14 +1,12 @@
-@layer utilities {
-  @keyframes veil-slow {
-    0%   { transform: translate3d(0,0,0) rotate(0deg) scale(1); }
-    50%  { transform: translate3d(2%, -1%, 0) rotate(8deg) scale(1.03); }
-    100% { transform: translate3d(0,0,0) rotate(0deg) scale(1); }
-  }
-  @keyframes veil-slower {
-    0%   { transform: translate3d(0,0,0) rotate(0deg) scale(1); }
-    50%  { transform: translate3d(-1%, 2%, 0) rotate(-10deg) scale(1.04); }
-    100% { transform: translate3d(0,0,0) rotate(0deg) scale(1); }
-  }
-  .animate-veil-slow   { animation: veil-slow 22s ease-in-out infinite; }
-  .animate-veil-slower { animation: veil-slower 32s ease-in-out infinite; }
+@keyframes veil-slow {
+  0%   { transform: translate3d(0,0,0) rotate(0deg) scale(1); }
+  50%  { transform: translate3d(2%, -1%, 0) rotate(8deg) scale(1.03); }
+  100% { transform: translate3d(0,0,0) rotate(0deg) scale(1); }
 }
+@keyframes veil-slower {
+  0%   { transform: translate3d(0,0,0) rotate(0deg) scale(1); }
+  50%  { transform: translate3d(-1%, 2%, 0) rotate(-10deg) scale(1.04); }
+  100% { transform: translate3d(0,0,0) rotate(0deg) scale(1); }
+}
+.animate-veil-slow   { animation: veil-slow 22s ease-in-out infinite; }
+.animate-veil-slower { animation: veil-slower 32s ease-in-out infinite; }
