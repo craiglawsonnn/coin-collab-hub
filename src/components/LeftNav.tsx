@@ -45,6 +45,18 @@ export default function LeftNav({ children }: { children?: React.ReactNode }) {
   const [loadingShared, setLoadingShared] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
 
+  const sidebarApi = safeSidebarApi();
+
+    // 👇 NEW: keep sidebar closed on small screens & open on >= md
+    useEffect(() => {
+      if (!sidebarApi) return;
+
+      const mq = window.matchMedia("(min-width: 768px)");
+      const apply = () => sidebarApi.setOpen(mq.matches); // open on ≥768px
+      apply(); // run once on mount
+      mq.addEventListener("change", apply);
+      return () => mq.removeEventListener("change", apply);
+    }, [sidebarApi]);
   useEffect(() => {
     if (!user?.id) return;
     const load = async () => {
@@ -279,10 +291,12 @@ function FloatingBurger() {
 
 /** Normalizes different sidebar API shapes across shadcn variants. */
 function safeSidebarApi():
-  | { open: boolean; smartToggle: () => void }
+  | { open: boolean; smartToggle: () => void; setOpen: (v: boolean) => void }
   | undefined {
   try {
     const ctx: any = useSidebar();
+
+    // detect "open" no matter which variant you use
     const open: boolean =
       typeof ctx?.open === "boolean"
         ? ctx.open
@@ -291,16 +305,28 @@ function safeSidebarApi():
         : !!ctx?.isOpen;
 
     const smartToggle = () => {
-      // Try common function names, then fall back to setOpen
       if (typeof ctx?.toggle === "function") return ctx.toggle();
       if (typeof ctx?.toggleSidebar === "function") return ctx.toggleSidebar();
       if (typeof ctx?.setOpen === "function") return ctx.setOpen(!open);
-      if (typeof ctx?.setCollapsed === "function") return ctx.setCollapsed(open); // some variants invert meaning
-      // absolute last resort: click a hidden SidebarTrigger if you keep one in DOM
+      if (typeof ctx?.setCollapsed === "function") return ctx.setCollapsed(open);
     };
 
-    return { open, smartToggle };
+    const setOpen = (v: boolean) => {
+      if (typeof ctx?.setOpen === "function") return ctx.setOpen(v);
+      if (typeof ctx?.setCollapsed === "function") return ctx.setCollapsed(!v);
+      if (typeof ctx?.toggle === "function") {
+        if (open !== v) ctx.toggle();
+        return;
+      }
+      if (typeof ctx?.toggleSidebar === "function") {
+        if (open !== v) ctx.toggleSidebar();
+        return;
+      }
+    };
+
+    return { open, smartToggle, setOpen };
   } catch {
     return undefined;
   }
 }
+

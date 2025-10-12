@@ -12,18 +12,17 @@ type DarkVeilProps = {
   resolutionScale?: number;
   className?: string;
 
-  // NEW (for light-mode control)
+  // Light-mode controls
   opacity?: number;                           // 0..1
-  tint?: [number, number, number];            // e.g. [1.0,0.84,0.20]
+  tint?: [number, number, number];            // rgb 0..1
   tintStrength?: number;                      // 0..1
   whiteMix?: number;                          // 0..1
   mapMode?: 0 | 1 | 2;                        // 0=tint, 1=gold-map, 2=invert-map
-  mapColor?: [number, number, number];        // target color (gold by default)
+  mapColor?: [number, number, number];        // rgb 0..1
 
-  /** Deprecated, keep for compat (ignored now) */
+  /** Deprecated, kept for compat (ignored) */
   whiteBackground?: boolean;
 };
-
 
 const vertex = `
 attribute vec2 position;
@@ -42,16 +41,13 @@ uniform float uScan;
 uniform float uScanFreq;
 uniform float uWarp;
 
-/* NEW controls */
-uniform float uOpacity;       // 0..1
-uniform vec3  uTint;          // rgb 0..1
-uniform float uTintStrength;  // 0..1
-uniform float uWhiteMix;      // 0..1
-
-/* NEW mapping controls */
+/* light-mode / mapping controls */
+uniform float uOpacity;
+uniform vec3  uTint;
+uniform float uTintStrength;
+uniform float uWhiteMix;
 uniform float uMapMode;
 uniform vec3  uMapColor;
-
 
 #define iTime uTime
 #define iResolution uResolution
@@ -106,27 +102,17 @@ void main(){
     col.rgb *= 1. - (scanline_val*scanline_val)*uScan;
     col.rgb += (rand(gl_FragCoord.xy+uTime)-0.5)*uNoise;
 
-    // Base color
-    vec3 c = clamp(col.rgb, 0.0, 1.0);
+    vec3 c = clamp(col.rgb,0.0,1.0);
 
-    // 0) original tinted/white-mixed look
     vec3 tinted = mix(mix(c, uTint, uTintStrength), vec3(1.0), uWhiteMix);
 
-    // 1) gold-map: map luminance to target color so it's visible on white
     float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
     vec3 goldMap   = mix(vec3(1.0), uMapColor, luma);
-
-    // 2) invert-map: “window” effect — bright where the base is dark
     vec3 invertMap = mix(vec3(1.0), uMapColor, 1.0 - luma);
 
-    // Choose mode
-    if (uMapMode < 0.5) {
-      c = tinted;        // 0
-    } else if (uMapMode < 1.5) {
-      c = goldMap;       // 1
-    } else {
-      c = invertMap;     // 2
-    }
+    if (uMapMode < 0.5)      c = tinted;
+    else if (uMapMode < 1.5) c = goldMap;
+    else                     c = invertMap;
 
     gl_FragColor = vec4(c, uOpacity);
 }
@@ -142,7 +128,6 @@ export default function DarkVeil({
   resolutionScale = 1,
   className = "",
 
-  // NEW defaults
   opacity = 1.0,
   tint = [0, 0, 0],
   tintStrength = 0,
@@ -150,31 +135,36 @@ export default function DarkVeil({
   mapMode = 0,
   mapColor = [1.0, 0.84, 0.20],
 }: DarkVeilProps) {
-
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const rendererRef = useRef<Renderer | null>(null);
+  const programRef = useRef<Program | null>(null);
   const rafRef = useRef<number>(0);
   const aliveRef = useRef(true);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+
     const parent = canvas.parentElement as HTMLElement | null;
     if (!parent) return;
 
     const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
     const effectiveSpeed = reduced ? speed * 0.6 : speed;
 
-    // Always transparent canvas; browser composites with page
+    // Renderer
     const renderer = new Renderer({
-      dpr: Math.min(window.devicePixelRatio, 2),
+      dpr: Math.min(window.devicePixelRatio || 1, 2),
       canvas,
       alpha: true,
       premultipliedAlpha: true,
     });
+    rendererRef.current = renderer;
+
     const gl = renderer.gl as unknown as WebGLRenderingContext;
-    gl.clearColor(0, 0, 0, 0); // fully transparent
+    gl.clearColor(0, 0, 0, 0);
     (canvas as HTMLCanvasElement).style.background = "transparent";
 
+    // Scene
     const geometry = new Triangle(gl);
     const program = new Program(gl, {
       vertex,
@@ -188,34 +178,71 @@ export default function DarkVeil({
         uScanFreq: { value: scanlineFrequency },
         uWarp: { value: warpAmount },
 
-        // NEW uniforms
         uOpacity: { value: opacity },
         uTint: { value: new Vec3(tint[0], tint[1], tint[2]) },
         uTintStrength: { value: tintStrength },
         uWhiteMix: { value: whiteMix },
-        uMapMode:   { value: mapMode },
-        uMapColor:  { value: new Vec3(mapColor[0], mapColor[1], mapColor[2]) },
-
+        uMapMode: { value: mapMode },
+        uMapColor: { value: new Vec3(mapColor[0], mapColor[1], mapColor[2]) },
       },
     });
+    programRef.current = program;
+
     const mesh = new Mesh(gl, { geometry, program });
 
-    const resize = () => {
-      const rect = parent.getBoundingClientRect();
-      const w = Math.max(1, rect.width);
-      const h = Math.max(1, rect.height);
-      renderer.setSize(w * resolutionScale, h * resolutionScale);
-      (program.uniforms.uResolution.value as Vec2).set(w, h);
-    };
-    window.addEventListener("resize", resize, { passive: true });
-    resize();
+    // --- Robust resize handling (Part A) ---
+    let rafFit: number | null = null;
+    const fit = () => {
+      if (!rendererRef.current || !programRef.current || !canvas) return;
 
+      // CSS size of the element
+      const rect = parent.getBoundingClientRect();
+      const cssW = Math.max(1, Math.round(rect.width));
+      const cssH = Math.max(1, Math.round(rect.height));
+
+      // Ensure CSS size is set explicitly
+      canvas.style.width = `${cssW}px`;
+      canvas.style.height = `${cssH}px`;
+
+      // Tell OGL to size the drawing buffer (it multiplies by DPR internally)
+      rendererRef.current.setSize(cssW * resolutionScale, cssH * resolutionScale);
+
+      // Device-pixel size (after OGL setSize)
+      const devW = (canvas as HTMLCanvasElement).width;
+      const devH = (canvas as HTMLCanvasElement).height;
+
+      // Update the GL viewport and shader resolution to device pixels
+      gl.viewport(0, 0, devW, devH);
+      (programRef.current.uniforms.uResolution.value as Vec2).set(devW, devH);
+    };
+
+    // Initial fit
+    fit();
+
+    // Observe layout changes of the parent/canvas
+    const ro = new ResizeObserver(() => {
+      if (rafFit) cancelAnimationFrame(rafFit);
+      rafFit = requestAnimationFrame(fit);
+    });
+    ro.observe(parent);
+    ro.observe(canvas);
+
+    // Also react to window resizes (orientation, mobile chrome show/hide)
+    const onWinResize = () => {
+      if (rafFit) cancelAnimationFrame(rafFit);
+      rafFit = requestAnimationFrame(fit);
+    };
+    window.addEventListener("resize", onWinResize, { passive: true });
+
+    // Render loop
     const t0 = performance.now();
     aliveRef.current = true;
 
     const loop = () => {
       if (!aliveRef.current) return;
-      (program.uniforms.uTime as any).value = ((performance.now() - t0) / 1000) * effectiveSpeed;
+      (program.uniforms.uTime as any).value =
+        ((performance.now() - t0) / 1000) * effectiveSpeed;
+
       renderer.render({ scene: mesh });
       rafRef.current = requestAnimationFrame(loop);
     };
@@ -223,18 +250,40 @@ export default function DarkVeil({
 
     return () => {
       aliveRef.current = false;
+      if (rafFit) cancelAnimationFrame(rafFit);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      window.removeEventListener("resize", resize);
+      ro.disconnect();
+      window.removeEventListener("resize", onWinResize);
       try {
         (renderer.gl as any)?.getExtension?.("WEBGL_lose_context")?.loseContext();
       } catch {}
     };
-    }, [
-      hueShift, noiseIntensity, scanlineIntensity, speed,
-      scanlineFrequency, warpAmount, resolutionScale,
-      opacity, tint[0], tint[1], tint[2], tintStrength, whiteMix,
-      mapMode, mapColor[0], mapColor[1], mapColor[2],   // <-- add these
-    ]);
+  }, [
+    hueShift,
+    noiseIntensity,
+    scanlineIntensity,
+    speed,
+    scanlineFrequency,
+    warpAmount,
+    resolutionScale,
+    opacity,
+    tint[0],
+    tint[1],
+    tint[2],
+    tintStrength,
+    whiteMix,
+    mapMode,
+    mapColor[0],
+    mapColor[1],
+    mapColor[2],
+  ]);
 
-  return <canvas ref={canvasRef} className={`darkveil-canvas ${className}`} />;
+  return (
+    <canvas
+      ref={canvasRef}
+      // `block` avoids inline-canvas baseline gaps in some browsers
+      className={`block darkveil-canvas ${className}`}
+      style={{ touchAction: "none" }}
+    />
+  );
 }
