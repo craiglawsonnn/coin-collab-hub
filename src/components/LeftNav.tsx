@@ -71,50 +71,51 @@ export default function LeftNav({ children }: { children?: React.ReactNode }) {
   const [loadingInbox, setLoadingInbox] = useState(false);
   const [actingOn, setActingOn] = useState<string | undefined>(undefined);
 
-  useEffect(() => {
+  // Load shared dashboards
+  async function loadSharedDashboards() {
     if (!user?.id) return;
+    
+    setLoadingShared(true);
+    try {
+      const { data: shares, error } = await supabase
+        .from("dashboard_shares")
+        .select("owner_id, role, status")
+        .eq("shared_with_user_id", user.id)
+        .eq("status", "accepted");
 
-    const load = async () => {
-      setLoadingShared(true);
-      try {
-        const { data: shares, error } = await supabase
-          .from("dashboard_shares")
-          .select("owner_id, role, status")
-          .eq("shared_with_user_id", user.id)
-          .eq("status", "accepted");
-
-        if (error) {
-          console.error("Error loading shared dashboards:", error);
-          setShared([]);
-        } else if (shares && shares.length > 0) {
-          const ownerIds = shares.map((s) => s.owner_id);
-          const { data: profiles } = await supabase
-            .from("searchable_profiles")
-            .select("id, full_name, email")
-            .in("id", ownerIds);
-
-          const profileMap = new Map(profiles?.map((p) => [p.id, p]) || []);
-          const rows = shares.map((share: any) => {
-            const profile = profileMap.get(share.owner_id);
-            return {
-              id: share.owner_id,
-              name: profile?.full_name || profile?.email || "Shared Dashboard",
-              owner: profile?.email || share.owner_id,
-            };
-          });
-          setShared(rows);
-        } else {
-          setShared([]);
-        }
-      } catch (err) {
-        console.error("Error:", err);
+      if (error) {
+        console.error("Error loading shared dashboards:", error);
         setShared([]);
-      } finally {
-        setLoadingShared(false);
-      }
-    };
+      } else if (shares && shares.length > 0) {
+        const ownerIds = shares.map((s) => s.owner_id);
+        const { data: profiles } = await supabase
+          .from("searchable_profiles")
+          .select("id, full_name, email")
+          .in("id", ownerIds);
 
-    load();
+        const profileMap = new Map(profiles?.map((p) => [p.id, p]) || []);
+        const rows = shares.map((share: any) => {
+          const profile = profileMap.get(share.owner_id);
+          return {
+            id: share.owner_id,
+            name: profile?.full_name || profile?.email || "Shared Dashboard",
+            owner: profile?.email || share.owner_id,
+          };
+        });
+        setShared(rows);
+      } else {
+        setShared([]);
+      }
+    } catch (err) {
+      console.error("Error:", err);
+      setShared([]);
+    } finally {
+      setLoadingShared(false);
+    }
+  }
+
+  useEffect(() => {
+    loadSharedDashboards();
   }, [user?.id]);
 
   // NEW: load pending invites
@@ -182,6 +183,7 @@ export default function LeftNav({ children }: { children?: React.ReactNode }) {
     } finally {
       setActingOn(undefined);
       await refreshInbox();
+      await loadSharedDashboards(); // Refresh shared dashboards list
     }
   }
 
