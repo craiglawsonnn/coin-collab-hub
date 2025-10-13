@@ -58,6 +58,42 @@ export type Database = {
           },
         ]
       }
+      budgets: {
+        Row: {
+          amount: number
+          category: string | null
+          created_at: string
+          currency_code: string
+          id: string
+          is_active: boolean
+          period: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          category?: string | null
+          created_at?: string
+          currency_code?: string
+          id?: string
+          is_active?: boolean
+          period?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          category?: string | null
+          created_at?: string
+          currency_code?: string
+          id?: string
+          is_active?: boolean
+          period?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       dashboard_shares: {
         Row: {
           created_at: string | null
@@ -82,6 +118,33 @@ export type Database = {
           role?: Database["public"]["Enums"]["dashboard_role"]
           shared_with_user_id?: string
           status?: Database["public"]["Enums"]["dashboard_invite_status"]
+        }
+        Relationships: []
+      }
+      exchange_rates: {
+        Row: {
+          base: string
+          created_at: string
+          id: number
+          provider: string
+          rate_date: string
+          rates: Json
+        }
+        Insert: {
+          base: string
+          created_at?: string
+          id?: number
+          provider?: string
+          rate_date: string
+          rates: Json
+        }
+        Update: {
+          base?: string
+          created_at?: string
+          id?: number
+          provider?: string
+          rate_date?: string
+          rates?: Json
         }
         Relationships: []
       }
@@ -129,6 +192,7 @@ export type Database = {
       }
       profiles: {
         Row: {
+          base_currency: string
           created_at: string | null
           email: string | null
           full_name: string | null
@@ -137,6 +201,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          base_currency?: string
           created_at?: string | null
           email?: string | null
           full_name?: string | null
@@ -145,6 +210,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          base_currency?: string
           created_at?: string | null
           email?: string | null
           full_name?: string | null
@@ -217,11 +283,16 @@ export type Database = {
       transactions: {
         Row: {
           account: string
+          amount_minor: number | null
+          base_amount_minor: number | null
+          base_currency: string
           category: string
           created_at: string | null
+          currency_code: string
           date: string
           description: string | null
           expense: number | null
+          fx_rate: number | null
           gross_income: number | null
           id: string
           net_flow: number | null
@@ -233,11 +304,16 @@ export type Database = {
         }
         Insert: {
           account: string
+          amount_minor?: number | null
+          base_amount_minor?: number | null
+          base_currency?: string
           category: string
           created_at?: string | null
+          currency_code?: string
           date?: string
           description?: string | null
           expense?: number | null
+          fx_rate?: number | null
           gross_income?: number | null
           id?: string
           net_flow?: number | null
@@ -249,11 +325,16 @@ export type Database = {
         }
         Update: {
           account?: string
+          amount_minor?: number | null
+          base_amount_minor?: number | null
+          base_currency?: string
           category?: string
           created_at?: string | null
+          currency_code?: string
           date?: string
           description?: string | null
           expense?: number | null
+          fx_rate?: number | null
           gross_income?: number | null
           id?: string
           net_flow?: number | null
@@ -269,6 +350,7 @@ export type Database = {
         Row: {
           account_name: string
           created_at: string
+          currency_code: string
           id: string
           is_active: boolean
           updated_at: string
@@ -277,6 +359,7 @@ export type Database = {
         Insert: {
           account_name: string
           created_at?: string
+          currency_code?: string
           id?: string
           is_active?: boolean
           updated_at?: string
@@ -285,6 +368,7 @@ export type Database = {
         Update: {
           account_name?: string
           created_at?: string
+          currency_code?: string
           id?: string
           is_active?: boolean
           updated_at?: string
@@ -344,6 +428,10 @@ export type Database = {
       }
     }
     Functions: {
+      get_rate: {
+        Args: { _base: string; _on: string; _quote: string }
+        Returns: number
+      }
       gtrgm_compress: {
         Args: { "": unknown }
         Returns: unknown
