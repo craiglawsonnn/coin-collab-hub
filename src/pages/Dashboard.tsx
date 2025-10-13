@@ -8,12 +8,13 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui/select";
-import { Plus, TrendingUp, TrendingDown, LogOut, Settings, LayoutGrid } from "lucide-react";
+import { Eye, EyeOff, Plus, TrendingUp, TrendingDown, LogOut, LayoutGrid, MoreVertical } from "lucide-react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { MoreVertical } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
+  DropdownMenuCheckboxItem,
+  DropdownMenuLabel,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -69,7 +70,7 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [searchParams] = useSearchParams();
-  
+
   // Determine which dashboard we're viewing (own or shared)
   const viewingOwnerId = searchParams.get("owner") || user?.id;
 
@@ -88,6 +89,39 @@ const Dashboard = () => {
       typeof document !== "undefined" &&
       document.documentElement.classList.contains("dark")
   );
+
+  const saveCardPrefs = async (next: {
+    showBalanceCard: boolean;
+    showIncomeCard: boolean;
+    showExpensesCard: boolean;
+    showMonthlySummaryCard?: boolean;
+    showAdjustmentsCard?: boolean;
+  }) => {
+    try {
+      const prefs = {
+        cards: {
+          showBalanceCard: next.showBalanceCard,
+          showIncomeCard: next.showIncomeCard,
+          showExpensesCard: next.showExpensesCard,
+          showMonthlySummaryCard,
+          showAdjustmentsCard,
+        },
+        ...(customViews?.length ? { customViews } : {}),
+      };
+      const { error } = await supabase
+        .from("profiles")
+        .update({ preferences: prefs })
+        .eq("id", user?.id);
+      if (error) throw error;
+      toast({ title: "Preferences saved" });
+    } catch (err: any) {
+      toast({
+        title: "Error saving preferences",
+        description: err.message || String(err),
+        variant: "destructive",
+      });
+    }
+  };
 
   // ✅ debug log when theme flips
   useEffect(() => {
@@ -252,6 +286,8 @@ const Dashboard = () => {
   }
   if (!user) return null;
 
+  const anyHidden = !showBalanceCard || !showIncomeCard || !showExpensesCard;
+
   return (
     <LeftNav>
       {/* page shell */}
@@ -280,7 +316,7 @@ const Dashboard = () => {
                 speed={isMobile ? 0.35 : 0.5}
                 warpAmount={0.08}
                 resolutionScale={isMobile ? 0.75 : 1}
-                opacity={0.26} 
+                opacity={0.26}
               />
             </div>
 
@@ -299,7 +335,6 @@ const Dashboard = () => {
             )}
           </div>
         </div>
-
 
         {/* Header — fluid width (no container) */}
         <header className="relative z-10 border-b bg-card/80 backdrop-blur">
@@ -320,24 +355,113 @@ const Dashboard = () => {
 
               {/* Right: desktop actions */}
               <div className="ml-auto hidden md:flex items-center gap-2">
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button variant="ghost" size="icon">
-                      <Settings className="h-5 w-5" />
+                {/* Eye/EyeOff visibility dropdown */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" aria-label="Show/Hide cards">
+                      {anyHidden ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                     </Button>
-                  </DialogTrigger>
-                  {/* ...settings dialog content stays the same... */}
-                </Dialog>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuLabel>Show cards</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuCheckboxItem
+                      checked={showBalanceCard}
+                      onCheckedChange={(val) => {
+                        setShowBalanceCard(!!val);
+                        saveCardPrefs({
+                          showBalanceCard: !!val,
+                          showIncomeCard,
+                          showExpensesCard,
+                          showMonthlySummaryCard,
+                          showAdjustmentsCard,
+                        });
+                      }}
+                    >
+                      Current Balance
+                    </DropdownMenuCheckboxItem>
+                    <DropdownMenuCheckboxItem
+                      checked={showIncomeCard}
+                      onCheckedChange={(val) => {
+                        setShowIncomeCard(!!val);
+                        saveCardPrefs({
+                          showBalanceCard,
+                          showIncomeCard: !!val,
+                          showExpensesCard,
+                          showMonthlySummaryCard,
+                          showAdjustmentsCard,
+                        });
+                      }}
+                    >
+                      This month Income
+                    </DropdownMenuCheckboxItem>
+                    <DropdownMenuCheckboxItem
+                      checked={showExpensesCard}
+                      onCheckedChange={(val) => {
+                        setShowExpensesCard(!!val);
+                        saveCardPrefs({
+                          showBalanceCard,
+                          showIncomeCard,
+                          showExpensesCard: !!val,
+                          showMonthlySummaryCard,
+                          showAdjustmentsCard,
+                        });
+                      }}
+                    >
+                      This month Expenses
+                    </DropdownMenuCheckboxItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
 
                 <ThemeToggle />
 
+                {/* Desktop Add view */}
                 <Dialog>
                   <DialogTrigger asChild>
                     <Button className="mr-2" variant="outline" size="sm">
                       <Plus className="mr-2 h-4 w-4" /> Add view
                     </Button>
                   </DialogTrigger>
-                  {/* ...CreateViewForm dialog content stays the same... */}
+                  <DialogContent className="max-w-md">
+                    <DialogHeader>
+                      <DialogTitle>Create custom view</DialogTitle>
+                      <DialogDescription>
+                        Create a wallet or insight view (pie or bar chart).
+                      </DialogDescription>
+                    </DialogHeader>
+
+                    <CreateViewForm
+                      transactions={transactions}
+                      onCreate={async (view) => {
+                        try {
+                          const next = [...customViews, view];
+                          setCustomViews(next);
+                          const prefs = {
+                            customViews: next,
+                            cards: {
+                              showBalanceCard,
+                              showIncomeCard,
+                              showExpensesCard,
+                              showMonthlySummaryCard,
+                              showAdjustmentsCard,
+                            },
+                          };
+                          const { error } = await supabase
+                            .from("profiles")
+                            .update({ preferences: prefs })
+                            .eq("id", user?.id);
+                          if (error) throw error;
+                          toast({ title: "View saved" });
+                        } catch (err: any) {
+                          toast({
+                            title: "Error saving view",
+                            description: err.message || String(err),
+                            variant: "destructive",
+                          });
+                        }
+                      }}
+                    />
+                  </DialogContent>
                 </Dialog>
 
                 <Button
@@ -368,7 +492,7 @@ const Dashboard = () => {
                 {/* Theme */}
                 <ThemeToggle />
 
-                {/* More menu (Add view, Settings, Logout) */}
+                {/* More menu (Add view, Logout) */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button size="icon" variant="ghost" aria-label="More">
@@ -392,7 +516,6 @@ const Dashboard = () => {
                           Add view
                         </DropdownMenuItem>
                       </DialogTrigger>
-                      {/* Reuse your CreateViewForm dialog here too */}
                       <DialogContent className="max-w-md">
                         <DialogHeader>
                           <DialogTitle>Create custom view</DialogTitle>
@@ -436,7 +559,6 @@ const Dashboard = () => {
             </div>
           </div>
         </header>
-
 
         {/* Main — fluid width (no container) */}
         <main className="relative z-10 w-full px-4 py-8">

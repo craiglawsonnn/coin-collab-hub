@@ -7,7 +7,11 @@ import {
   Settings,
   LayoutGrid,
   UserPlus,
-  Menu, // 3-stack burger
+  Menu,
+  Inbox,
+  Loader2,
+  Check,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import InviteManager from "@/components/InviteManager";
@@ -22,7 +26,7 @@ import {
   SidebarProvider,
   SidebarTrigger,
   SidebarInset,
-  useSidebar, // hook from your sidebar lib
+  useSidebar,
 } from "@/components/ui/sidebar";
 import {
   Accordion,
@@ -30,35 +34,46 @@ import {
   AccordionTrigger,
   AccordionContent,
 } from "@/components/ui/accordion";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 
 type SharedDash = { id: string; name: string; owner?: string };
+type PendingInvite = {
+  id?: string;                // nullable in case your table lacks a PK id
+  owner_id: string;
+  role?: string | null;
+  created_at?: string | null;
+  inviter_name?: string | null;
+  inviter_email?: string | null;
+};
 
 export default function LeftNav({ children }: { children?: React.ReactNode }) {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
   const ownerParam = searchParams.get("owner");
-  
+
   const [shared, setShared] = useState<SharedDash[]>([]);
   const [loadingShared, setLoadingShared] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
 
-  const sidebarApi = safeSidebarApi();
+  // NEW: pending invite inbox state
+  const [inboxOpen, setInboxOpen] = useState(false);
+  const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
+  const [loadingInbox, setLoadingInbox] = useState(false);
+  const [actingOn, setActingOn] = useState<string | undefined>(undefined);
 
-    // 👇 NEW: keep sidebar closed on small screens & open on >= md
-    useEffect(() => {
-      if (!sidebarApi) return;
-
-      const mq = window.matchMedia("(min-width: 768px)");
-      const apply = () => sidebarApi.setOpen(mq.matches); // open on ≥768px
-      apply(); // run once on mount
-      mq.addEventListener("change", apply);
-      return () => mq.removeEventListener("change", apply);
-    }, [sidebarApi]);
   useEffect(() => {
     if (!user?.id) return;
+
     const load = async () => {
       setLoadingShared(true);
       try {
@@ -72,15 +87,13 @@ export default function LeftNav({ children }: { children?: React.ReactNode }) {
           console.error("Error loading shared dashboards:", error);
           setShared([]);
         } else if (shares && shares.length > 0) {
-          // Fetch owner profiles from searchable_profiles
-          const ownerIds = shares.map(s => s.owner_id);
+          const ownerIds = shares.map((s) => s.owner_id);
           const { data: profiles } = await supabase
             .from("searchable_profiles")
             .select("id, full_name, email")
             .in("id", ownerIds);
 
-          const profileMap = new Map(profiles?.map(p => [p.id, p]) || []);
-
+          const profileMap = new Map(profiles?.map((p) => [p.id, p]) || []);
           const rows = shares.map((share: any) => {
             const profile = profileMap.get(share.owner_id);
             return {
@@ -100,8 +113,94 @@ export default function LeftNav({ children }: { children?: React.ReactNode }) {
         setLoadingShared(false);
       }
     };
+
     load();
   }, [user?.id]);
+
+  // NEW: load pending invites
+  useEffect(() => {
+    if (!user?.id) return;
+    refreshInbox();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  async function refreshInbox() {
+    try {
+      setLoadingInbox(true);
+      const { data: pend, error } = await supabase
+        .from("dashboard_shares")
+        .select("id, owner_id, role, status, created_at")
+        .eq("shared_with_user_id", user!.id)
+        .eq("status", "pending")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      const owners = (pend || []).map((p) => p.owner_id);
+      let profilesMap = new Map<string, { full_name: string | null; email: string | null }>();
+      if (owners.length) {
+        const { data: profiles } = await supabase
+          .from("searchable_profiles")
+          .select("id, full_name, email")
+          .in("id", owners);
+
+        profilesMap = new Map((profiles || []).map((p: any) => [p.id, { full_name: p.full_name, email: p.email }]));
+      }
+
+      const enriched: PendingInvite[] = (pend || []).map((p: any) => {
+        const prof = profilesMap.get(p.owner_id);
+        return {
+          id: p.id,
+          owner_id: p.owner_id,
+          role: p.role,
+          created_at: p.created_at,
+          inviter_name: prof?.full_name ?? null,
+          inviter_email: prof?.email ?? null,
+        };
+      });
+      setPendingInvites(enriched);
+    } catch (e) {
+      console.error("Failed to load pending invites:", e);
+      setPendingInvites([]);
+    } finally {
+      setLoadingInbox(false);
+    }
+  }
+
+  async function acceptInvite(inv: PendingInvite) {
+    setActingOn(inv.id);
+    try {
+      // prefer id, else fall back to owner/shared_with composite
+      const q = supabase.from("dashboard_shares").update({ status: "accepted" });
+      const { error } =
+        inv.id
+          ? await q.eq("id", inv.id)
+          : await q.match({ owner_id: inv.owner_id, shared_with_user_id: user!.id });
+      if (error) throw error;
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setActingOn(undefined);
+      await refreshInbox();
+    }
+  }
+
+  async function declineInvite(inv: PendingInvite) {
+    setActingOn(inv.id);
+    try {
+      const q = supabase.from("dashboard_shares").update({ status: "declined" });
+      const { error } =
+        inv.id
+          ? await q.eq("id", inv.id)
+          : await q.match({ owner_id: inv.owner_id, shared_with_user_id: user!.id });
+      if (error) throw error;
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setActingOn(undefined);
+      await refreshInbox();
+    }
+  }
 
   return (
     <SidebarProvider>
@@ -146,7 +245,9 @@ export default function LeftNav({ children }: { children?: React.ReactNode }) {
                           variant="ghost"
                           size="sm"
                           className="justify-start"
-                          onClick={() => navigate(ownerParam ? `/transactions?owner=${ownerParam}` : "/transactions")}
+                          onClick={() =>
+                            navigate(ownerParam ? `/transactions?owner=${ownerParam}` : "/transactions")
+                          }
                         >
                           <Layers className="mr-2 h-4 w-4" />
                           Transactions
@@ -189,9 +290,7 @@ export default function LeftNav({ children }: { children?: React.ReactNode }) {
                         </div>
 
                         {loadingShared ? (
-                          <div className="px-2 py-2 text-sm text-muted-foreground italic">
-                            Loading…
-                          </div>
+                          <div className="px-2 py-2 text-sm text-muted-foreground italic">Loading…</div>
                         ) : shared.length === 0 ? (
                           <div className="px-2 py-2 text-sm italic text-muted-foreground">
                             there are no dashboards that have been shared with you yet :(
@@ -220,7 +319,25 @@ export default function LeftNav({ children }: { children?: React.ReactNode }) {
           </SidebarContent>
 
           <SidebarFooter>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col gap-2 w-full">
+              {/* Invite inbox button with badge */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="justify-between"
+                onClick={() => setInboxOpen(true)}
+              >
+                <span className="flex items-center gap-2">
+                  <Inbox className="h-4 w-4" />
+                  Invite inbox
+                </span>
+                {pendingInvites.length > 0 && (
+                  <span className="ml-2 rounded-full bg-primary text-primary-foreground text-[10px] px-1.5 py-0.5">
+                    {pendingInvites.length}
+                  </span>
+                )}
+              </Button>
+
               <Button
                 variant="ghost"
                 size="sm"
@@ -233,14 +350,81 @@ export default function LeftNav({ children }: { children?: React.ReactNode }) {
           </SidebarFooter>
         </Sidebar>
 
-        {/* Fluid content area */}
-        <SidebarInset className="flex-1 min-w-0 w-full max-w-none">
-          {children}
-        </SidebarInset>
+        {/* Content */}
+        <SidebarInset className="flex-1 min-w-0 w-full max-w-none">{children}</SidebarInset>
       </div>
 
-      {/* Invite Manager Dialog */}
+      {/* Invite Manager Dialog (existing) */}
       <InviteManager open={inviteOpen} onOpenChange={setInviteOpen} />
+
+      {/* NEW: Inbox dialog */}
+      <Dialog open={inboxOpen} onOpenChange={setInboxOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Pending Invites</DialogTitle>
+            <DialogDescription>
+              These dashboards were shared with you. Accept to add them to your sidebar.
+            </DialogDescription>
+          </DialogHeader>
+
+          {loadingInbox ? (
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading…
+            </div>
+          ) : pendingInvites.length === 0 ? (
+            <div className="text-sm text-muted-foreground">No pending invites.</div>
+          ) : (
+            <div className="space-y-3">
+              {pendingInvites.map((inv) => (
+                <div
+                  key={inv.id ?? inv.owner_id}
+                  className="flex items-center justify-between rounded border p-3"
+                >
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">
+                      {inv.inviter_name || inv.inviter_email || inv.owner_id}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {inv.role ? `Role: ${inv.role}` : "Shared dashboard"}
+                      {inv.created_at ? ` • ${new Date(inv.created_at).toLocaleDateString()}` : ""}
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => acceptInvite(inv)}
+                      disabled={actingOn === inv.id}
+                    >
+                      {actingOn === inv.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Check className="h-4 w-4 mr-1" />
+                      )}
+                      Accept
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => declineInvite(inv)}
+                      disabled={actingOn === inv.id}
+                    >
+                      <X className="h-4 w-4 mr-1" />
+                      Decline
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setInboxOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </SidebarProvider>
   );
 }
@@ -248,10 +432,7 @@ export default function LeftNav({ children }: { children?: React.ReactNode }) {
 /** Header burger that calls the correct toggle API across sidebar variants. */
 function HeaderBurger() {
   const api = safeSidebarApi();
-
-  // If the hook is missing entirely, fall back to the library trigger (built-in icon).
   if (!api) return <SidebarTrigger className="shrink-0" aria-label="Toggle sidebar" />;
-
   return (
     <Button
       variant="ghost"
@@ -266,19 +447,16 @@ function HeaderBurger() {
   );
 }
 
-/** Floating burger — only visible when the sidebar is collapsed.
- *  Positioned below the page title so it won’t cover it. */
+/** Floating burger — only visible when the sidebar is collapsed. */
 function FloatingBurger() {
   const api = safeSidebarApi();
-  if (!api) return null;           // no API -> nothing to render
-  if (api.open) return null;       // only show when closed/collapsed
-
+  if (!api || api.open) return null;
   return (
     <div className="fixed left-3 top-16 md:top-20 z-50 pointer-events-auto">
       <Button
         variant="default"
         size="icon"
-        className="h-10 w-10 rounded-full shadow-lg bg-primary text-primary-foreground hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="h-10 w-10 rounded-full shadow-lg"
         aria-label="Open sidebar"
         title="Open menu"
         onClick={api.smartToggle}
@@ -290,13 +468,9 @@ function FloatingBurger() {
 }
 
 /** Normalizes different sidebar API shapes across shadcn variants. */
-function safeSidebarApi():
-  | { open: boolean; smartToggle: () => void; setOpen: (v: boolean) => void }
-  | undefined {
+function safeSidebarApi(): { open: boolean; smartToggle: () => void } | undefined {
   try {
     const ctx: any = useSidebar();
-
-    // detect "open" no matter which variant you use
     const open: boolean =
       typeof ctx?.open === "boolean"
         ? ctx.open
@@ -311,22 +485,8 @@ function safeSidebarApi():
       if (typeof ctx?.setCollapsed === "function") return ctx.setCollapsed(open);
     };
 
-    const setOpen = (v: boolean) => {
-      if (typeof ctx?.setOpen === "function") return ctx.setOpen(v);
-      if (typeof ctx?.setCollapsed === "function") return ctx.setCollapsed(!v);
-      if (typeof ctx?.toggle === "function") {
-        if (open !== v) ctx.toggle();
-        return;
-      }
-      if (typeof ctx?.toggleSidebar === "function") {
-        if (open !== v) ctx.toggleSidebar();
-        return;
-      }
-    };
-
-    return { open, smartToggle, setOpen };
+    return { open, smartToggle };
   } catch {
     return undefined;
   }
 }
-

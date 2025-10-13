@@ -1,66 +1,113 @@
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useNavigate } from "react-router-dom";
+import LeftNav from "@/components/LeftNav";
+import ThemeToggle from "@/components/ThemeToggle";
+
+import { Button } from "@/components/ui/button";
+import { ArrowLeft } from "lucide-react";
+
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+
 import { AccountsSettings } from "@/components/settings/AccountsSettings";
 import { CategoriesSettings } from "@/components/settings/CategoriesSettings";
 import { RecurringTransactions } from "@/components/settings/RecurringTransactions";
 
 export default function Settings() {
+  const navigate = useNavigate();
+
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Settings</h1>
-        <p className="text-muted-foreground">Manage your accounts, categories, and recurring transactions</p>
-      </div>
+    <LeftNav>
+      {/* Header (matches Dashboard look/feel) */}
+      <header className="sticky top-0 z-10 border-b bg-card/80 backdrop-blur">
+        <div className="w-full px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Go back"
+                onClick={() => navigate(-1)}
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+              <div>
+                <h1 className="text-xl md:text-2xl font-bold">Settings</h1>
+                <p className="text-sm text-muted-foreground">
+                  Manage your accounts, categories, and recurring transactions
+                </p>
+              </div>
+            </div>
 
-      <Tabs defaultValue="accounts" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="accounts">Accounts</TabsTrigger>
-          <TabsTrigger value="categories">Categories</TabsTrigger>
-          <TabsTrigger value="recurring">Recurring</TabsTrigger>
-        </TabsList>
+            <div className="flex items-center gap-2">
+              <ThemeToggle />
+            </div>
+          </div>
+        </div>
+      </header>
 
-        <TabsContent value="accounts" className="mt-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Account Types</CardTitle>
-              <CardDescription>
-                Manage your custom account types (e.g., Bank accounts, Cash, Credit cards)
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <AccountsSettings />
-            </CardContent>
-          </Card>
-        </TabsContent>
+      {/* Page body */}
+      <main className="w-full px-4 py-6">
+        <Tabs defaultValue="accounts" className="w-full">
+          <TabsList className="grid w-full max-w-xl grid-cols-3">
+            <TabsTrigger value="accounts">Accounts</TabsTrigger>
+            <TabsTrigger value="categories">Categories</TabsTrigger>
+            <TabsTrigger value="recurring">Recurring</TabsTrigger>
+          </TabsList>
 
-        <TabsContent value="categories" className="mt-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Transaction Categories</CardTitle>
-              <CardDescription>
-                Manage your custom transaction categories for income and expenses
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <CategoriesSettings />
-            </CardContent>
-          </Card>
-        </TabsContent>
+          <TabsContent value="accounts" className="mt-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Account Types</CardTitle>
+                <CardDescription>
+                  Manage your custom account types (e.g., Bank accounts, Cash, Credit cards)
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <AccountsSettings />
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-        <TabsContent value="recurring" className="mt-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Recurring Transactions</CardTitle>
-              <CardDescription>
-                Set up transactions that repeat automatically (e.g., monthly rent, weekly subscriptions)
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <RecurringTransactions />
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-    </div>
+          <TabsContent value="categories" className="mt-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Transaction Categories</CardTitle>
+                <CardDescription>
+                  Manage your custom transaction categories for income and expenses
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <CategoriesSettings />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="recurring" className="mt-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Recurring Transactions</CardTitle>
+                <CardDescription>
+                  Set up transactions that repeat automatically (e.g., monthly rent, weekly subscriptions)
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <RecurringTransactions />
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </main>
+    </LeftNav>
   );
 }
