@@ -22,6 +22,7 @@ import {
 import { AccountsSettings } from "@/components/settings/AccountsSettings";
 import { CategoriesSettings } from "@/components/settings/CategoriesSettings";
 import { RecurringTransactions } from "@/components/settings/RecurringTransactions";
+import { Budgets } from "@/components/settings/Budgets";
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -59,10 +60,11 @@ export default function Settings() {
       {/* Page body */}
       <main className="w-full px-4 py-6">
         <Tabs defaultValue="accounts" className="w-full">
-          <TabsList className="grid w-full max-w-xl grid-cols-3">
+          <TabsList className="grid w-full max-w-xl grid-cols-4">
             <TabsTrigger value="accounts">Accounts</TabsTrigger>
             <TabsTrigger value="categories">Categories</TabsTrigger>
             <TabsTrigger value="recurring">Recurring</TabsTrigger>
+            <TabsTrigger value="budgets">Budgets</TabsTrigger>
           </TabsList>
 
           <TabsContent value="accounts" className="mt-6">
@@ -103,6 +105,20 @@ export default function Settings() {
               </CardHeader>
               <CardContent>
                 <RecurringTransactions />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="budgets" className="mt-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Budget Management</CardTitle>
+                <CardDescription>
+                  Set spending limits for overall expenses or specific categories
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Budgets />
               </CardContent>
             </Card>
           </TabsContent>
