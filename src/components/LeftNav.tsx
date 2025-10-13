@@ -188,7 +188,7 @@ export default function LeftNav({ children }: { children?: React.ReactNode }) {
   async function declineInvite(inv: PendingInvite) {
     setActingOn(inv.id);
     try {
-      const q = supabase.from("dashboard_shares").update({ status: "declined" });
+      const q = supabase.from("dashboard_shares").update({ status: "rejected" });
       const { error } =
         inv.id
           ? await q.eq("id", inv.id)
