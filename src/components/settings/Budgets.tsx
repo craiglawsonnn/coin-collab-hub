@@ -14,6 +14,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -26,7 +27,7 @@ type Budget = {
   category: string | null;
   amount: number;
   currency_code: string;
-  period: string;
+  period: "weekly" | "monthly" | "yearly";
   is_active: boolean;
 };
 
@@ -39,9 +40,9 @@ export function Budgets() {
 
   // Form state
   const [category, setCategory] = useState<string>("");
-  const [amount, setAmount] = useState("");
-  const [currency, setCurrency] = useState("EUR");
-  const [period, setPeriod] = useState("monthly");
+  const [amount, setAmount] = useState<string>("");
+  const [currency, setCurrency] = useState<"EUR" | "USD" | "GBP" | "PLN">("EUR");
+  const [period, setPeriod] = useState<"weekly" | "monthly" | "yearly">("monthly");
 
   useEffect(() => {
     if (user?.id) {
@@ -72,21 +73,30 @@ export function Budgets() {
 
   async function loadCategories() {
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("user_categories")
         .select("category_name")
         .eq("user_id", user!.id)
         .eq("is_active", true)
         .eq("is_expense", true);
 
+      if (error) throw error;
       setCategories(data?.map((c) => c.category_name) || []);
     } catch (err) {
       console.error("Error loading categories:", err);
     }
   }
 
+  function resetForm() {
+    setCategory("");
+    setAmount("");
+    setCurrency("EUR");
+    setPeriod("monthly");
+  }
+
   async function handleCreate() {
-    if (!amount || parseFloat(amount) <= 0) {
+    const value = parseFloat(amount);
+    if (!Number.isFinite(value) || value <= 0) {
       toast.error("Please enter a valid amount");
       return;
     }
@@ -95,7 +105,7 @@ export function Budgets() {
       const { error } = await supabase.from("budgets").insert({
         user_id: user!.id,
         category: category || null,
-        amount: parseFloat(amount),
+        amount: value,
         currency_code: currency,
         period,
         is_active: true,
@@ -103,18 +113,13 @@ export function Budgets() {
 
       if (error) throw error;
 
-      toast.success(
-        category
-          ? `Budget for ${category} created`
-          : "Overall budget created"
-      );
+      toast.success(category ? `Budget for ${category} created` : "Overall budget created");
       setDialogOpen(false);
-      setCategory("");
-      setAmount("");
+      resetForm();
       loadBudgets();
     } catch (err: any) {
       console.error("Error creating budget:", err);
-      if (err.message?.includes("unique")) {
+      if (err?.message?.toLowerCase?.().includes("unique")) {
         toast.error("Budget already exists for this category/period");
       } else {
         toast.error("Failed to create budget");
@@ -148,6 +153,8 @@ export function Budgets() {
         <p className="text-sm text-muted-foreground">
           Set spending limits to track your expenses
         </p>
+
+        {/* Dialog: force on top with high z so it won’t hide behind headers/sidebars */}
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button size="sm">
@@ -155,15 +162,20 @@ export function Budgets() {
               Add Budget
             </Button>
           </DialogTrigger>
-          <DialogContent>
+
+          <DialogContent className="sm:max-w-md z-[100]">
             <DialogHeader>
               <DialogTitle>Create Budget</DialogTitle>
+              <DialogDescription>
+                Create an overall budget (all categories) or a category-specific one.
+              </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 pt-4">
+
+            <div className="space-y-4 pt-2">
               <div className="space-y-2">
-                <Label>Category (optional)</Label>
+                <Label htmlFor="budget-category">Category (optional)</Label>
                 <Select value={category} onValueChange={setCategory}>
-                  <SelectTrigger>
+                  <SelectTrigger id="budget-category">
                     <SelectValue placeholder="Overall budget (all categories)" />
                   </SelectTrigger>
                   <SelectContent>
@@ -178,8 +190,10 @@ export function Budgets() {
               </div>
 
               <div className="space-y-2">
-                <Label>Amount</Label>
+                <Label htmlFor="budget-amount">Amount</Label>
                 <Input
+                  id="budget-amount"
+                  inputMode="decimal"
                   type="number"
                   step="0.01"
                   placeholder="0.00"
@@ -188,33 +202,35 @@ export function Budgets() {
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label>Currency</Label>
-                <Select value={currency} onValueChange={setCurrency}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="EUR">EUR (€)</SelectItem>
-                    <SelectItem value="USD">USD ($)</SelectItem>
-                    <SelectItem value="GBP">GBP (£)</SelectItem>
-                    <SelectItem value="PLN">PLN (zł)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="budget-currency">Currency</Label>
+                  <Select value={currency} onValueChange={(v: any) => setCurrency(v)}>
+                    <SelectTrigger id="budget-currency">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="EUR">EUR (€)</SelectItem>
+                      <SelectItem value="USD">USD ($)</SelectItem>
+                      <SelectItem value="GBP">GBP (£)</SelectItem>
+                      <SelectItem value="PLN">PLN (zł)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              <div className="space-y-2">
-                <Label>Period</Label>
-                <Select value={period} onValueChange={setPeriod}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="weekly">Weekly</SelectItem>
-                    <SelectItem value="monthly">Monthly</SelectItem>
-                    <SelectItem value="yearly">Yearly</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="space-y-2">
+                  <Label htmlFor="budget-period">Period</Label>
+                  <Select value={period} onValueChange={(v: any) => setPeriod(v)}>
+                    <SelectTrigger id="budget-period">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="weekly">Weekly</SelectItem>
+                      <SelectItem value="monthly">Monthly</SelectItem>
+                      <SelectItem value="yearly">Yearly</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
               <Button onClick={handleCreate} className="w-full">
@@ -228,7 +244,7 @@ export function Budgets() {
       {loading ? (
         <div className="text-sm text-muted-foreground">Loading...</div>
       ) : budgets.length === 0 ? (
-        <div className="text-center py-8 text-muted-foreground">
+        <div className="text-center py-10 text-muted-foreground">
           <DollarSign className="mx-auto h-12 w-12 mb-2 opacity-50" />
           <p>No budgets set yet</p>
         </div>
@@ -250,6 +266,7 @@ export function Budgets() {
                   variant="ghost"
                   size="icon"
                   onClick={() => handleDelete(overallBudget.id)}
+                  aria-label="Delete overall budget"
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
@@ -279,6 +296,7 @@ export function Budgets() {
                         variant="ghost"
                         size="icon"
                         onClick={() => handleDelete(budget.id)}
+                        aria-label={`Delete budget ${budget.category}`}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>

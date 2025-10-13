@@ -1,3 +1,4 @@
+// src/pages/Transactions.tsx
 import { useEffect, useMemo, useState } from "react";
 import LeftNav from "@/components/LeftNav";
 import { Card } from "@/components/ui/card";
@@ -30,13 +31,19 @@ import {
 type Tx = {
   id: string;
   user_id: string;
-  date: string;
+  date: string;                     // ISO date/time
   description: string | null;
   category: string | null;
   account: string | null;
   net_income?: number | null;
   expense?: number | null;
   net_flow: number;
+
+  // Optional audit fields (safe if not present in DB; UI hides them)
+  created_at?: string | null;
+  updated_at?: string | null;
+  created_by?: string | null;
+  updated_by?: string | null;
 };
 
 export default function TransactionsPage() {
@@ -61,18 +68,34 @@ export default function TransactionsPage() {
   const [editing, setEditing] = useState<Tx | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
+  // map user_id -> display name for audit lines
+  const [nameMap, setNameMap] = useState<Record<string, string>>({});
+
   useEffect(() => {
     fetchPage();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sort, direction, page, viewingOwnerId]);
 
+  const fmtAmount = (n: number, currency = "EUR") =>
+    new Intl.NumberFormat(undefined, { style: "currency", currency }).format(n);
+
+  const fmtDateTime = (iso?: string | null) => {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    return `${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+  };
+
   async function fetchPage() {
     setLoading(true);
     try {
       const limit = 50;
+
       let query = supabase
         .from("transactions")
-        .select("*")
+        .select(
+          // pull audit columns if present; harmless if columns exist/are null
+          "id,user_id,date,description,category,account,net_income,expense,net_flow,created_at,updated_at,created_by,updated_by"
+        )
         .eq("user_id", viewingOwnerId);
 
       if (sort === "date") query = query.order("date", { ascending: direction === "asc" });
@@ -83,7 +106,26 @@ export default function TransactionsPage() {
       const { data, error } = await query.range(from, to);
       if (error) throw error;
 
-      setTransactions((data || []) as Tx[]);
+      const txs = (data || []) as Tx[];
+      setTransactions(txs);
+
+      // Resolve names for created_by / updated_by
+      const ids = Array.from(
+        new Set(txs.flatMap(t => [t.created_by, t.updated_by]).filter(Boolean) as string[])
+      );
+      if (ids.length) {
+        const { data: profs, error: pErr } = await supabase
+          .from("searchable_profiles")
+          .select("id, full_name, email")
+          .in("id", ids);
+        if (!pErr && profs) {
+          const map: Record<string, string> = {};
+          profs.forEach(p => (map[p.id] = p.full_name || p.email || p.id));
+          setNameMap(map);
+        }
+      } else {
+        setNameMap({});
+      }
     } catch (e: any) {
       toast({
         title: "Error loading transactions",
@@ -111,23 +153,19 @@ export default function TransactionsPage() {
     });
   }, [transactions, query, typeFilter]);
 
-  function fmtAmount(n: number, currency = "EUR") {
-    return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(n);
-  }
-
   function openEdit(t: Tx) {
     if (!isOwn) return;
     setEditing(t);
   }
 
-  // --- Save WITHOUT sending net_flow (DB computes it)
+  // Save WITHOUT sending net_flow (DB computes it)
   async function saveEdit(values: Partial<Tx> & { id: string }) {
-    // optimistic UI
     const optimisticNetFlow =
       typeof values.net_flow === "number"
         ? values.net_flow
         : (values.net_income ?? 0) - (values.expense ?? 0);
 
+    // optimistic
     setTransactions((prev) =>
       prev.map((t) => (t.id === values.id ? { ...t, ...values, net_flow: optimisticNetFlow } as Tx : t))
     );
@@ -142,7 +180,7 @@ export default function TransactionsPage() {
           date: values.date ?? null,
           net_income: values.net_income ?? null,
           expense: values.expense ?? null,
-          // ⚠️ Do NOT send net_flow — it’s computed by DB or a trigger
+          updated_by: user?.id ?? null,       // optional audit (safe if column missing)
         })
         .eq("id", values.id)
         .eq("user_id", viewingOwnerId);
@@ -166,7 +204,11 @@ export default function TransactionsPage() {
     const snapshot = transactions;
     setTransactions((prev) => prev.filter((t) => t.id !== id));
     try {
-      const { error } = await supabase.from("transactions").delete().eq("id", id).eq("user_id", viewingOwnerId);
+      const { error } = await supabase
+        .from("transactions")
+        .delete()
+        .eq("id", id)
+        .eq("user_id", viewingOwnerId);
       if (error) throw error;
       toast({ title: "Deleted", description: "Transaction removed." });
     } catch (e: any) {
@@ -180,7 +222,6 @@ export default function TransactionsPage() {
       <div className="w-full px-4 py-6 md:px-6">
         {/* Header */}
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
-          {/* Left cluster */}
           <div className="flex items-center gap-2 sm:gap-3">
             <Button
               variant="ghost"
@@ -191,9 +232,7 @@ export default function TransactionsPage() {
               <ChevronLeft className="mr-1 h-4 w-4" />
               <span className="hidden xs:inline">Back</span>
             </Button>
-
             <h2 className="text-xl sm:text-2xl font-bold">All Transactions</h2>
-
             {!isOwn && (
               <span className="text-[10px] sm:text-xs rounded bg-muted/60 px-2 py-1 text-muted-foreground">
                 Read-only view
@@ -201,7 +240,6 @@ export default function TransactionsPage() {
             )}
           </div>
 
-          {/* Controls cluster – responsive */}
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-2">
               <Filter className="h-4 w-4 text-muted-foreground hidden sm:block" />
@@ -263,32 +301,80 @@ export default function TransactionsPage() {
                 return (
                   <div
                     key={t.id}
-                    className="flex items-center justify-between p-2 sm:p-3 border rounded hover:bg-accent/40 transition-colors"
+                    className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between p-3 border rounded hover:bg-accent/40 transition-colors"
                     onClick={() => openEdit(t)}
                     role={isOwn ? "button" : undefined}
                   >
-                    <div className="flex items-center gap-2 sm:gap-3">
-                      <div className={`p-1.5 sm:p-2 rounded-full ${positive ? "bg-emerald-500/15" : "bg-rose-500/15"}`}>
+                    {/* Left: icon + main info */}
+                    <div className="flex items-start sm:items-center gap-3">
+                      <div
+                        className={`mt-0.5 p-2 rounded-full ${
+                          positive ? "bg-emerald-500/15" : "bg-rose-500/15"
+                        }`}
+                      >
                         {positive ? (
                           <ArrowUpRight className="h-4 w-4 text-emerald-500" />
                         ) : (
                           <ArrowDownRight className="h-4 w-4 text-rose-500" />
                         )}
                       </div>
-                      <div>
-                        <div className="font-medium text-sm sm:text-base">
+
+                      <div className="min-w-0">
+                        {/* Title */}
+                        <div className="font-medium truncate">
                           {t.description || <span className="text-muted-foreground">No description</span>}
                         </div>
-                        <div className="text-[11px] sm:text-xs text-muted-foreground">
-                          {t.category || "Uncategorized"} • {t.account || "—"} • {new Date(t.date).toLocaleDateString()}
+
+                        {/* Badges */}
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] sm:text-xs">
+                          <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
+                            {t.category || "Uncategorized"}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                            {t.account || "—"}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                            {fmtDateTime(t.date)}
+                          </span>
                         </div>
+
+                        {/* Meta line */}
+                        {(t.created_by || t.updated_by || t.created_at || t.updated_at) && (
+                          <div className="mt-1 text-[11px] sm:text-xs text-muted-foreground">
+                            {t.created_by && (
+                              <>
+                                created by{" "}
+                                <span className="font-medium">
+                                  {nameMap[t.created_by] || t.created_by}
+                                </span>
+                                {t.created_at ? ` • ${fmtDateTime(t.created_at)}` : null}
+                              </>
+                            )}
+                            {t.updated_by && (
+                              <>
+                                {t.created_by ? " — " : ""}
+                                updated by{" "}
+                                <span className="font-medium">
+                                  {nameMap[t.updated_by] || t.updated_by}
+                                </span>
+                                {t.updated_at ? ` • ${fmtDateTime(t.updated_at)}` : null}
+                              </>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1 sm:gap-2">
-                      <div className={`font-bold ${positive ? "text-emerald-500" : "text-rose-500"} text-sm sm:text-base`}>
+                    {/* Right: amount + actions */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <div
+                        className={`font-bold ${
+                          positive ? "text-emerald-500" : "text-rose-500"
+                        }`}
+                      >
                         {fmtAmount(Number(t.net_flow) || 0, "EUR")}
                       </div>
+
                       {isOwn && (
                         <>
                           <Button
@@ -331,7 +417,9 @@ export default function TransactionsPage() {
             Previous
           </Button>
           <div className="text-sm">Page {page + 1}</div>
-          <Button size="sm" onClick={() => setPage((p) => p + 1)}>Next</Button>
+          <Button size="sm" onClick={() => setPage((p) => p + 1)}>
+            Next
+          </Button>
         </div>
 
         {/* Edit dialog */}
@@ -386,7 +474,7 @@ function EditTransactionDialog({
     const ni = Number(v.net_income ?? 0);
     const ex = Number(v.expense ?? 0);
     return Number.isFinite(ni - ex) ? ni - ex : v.net_flow ?? 0;
-  }
+    }
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
