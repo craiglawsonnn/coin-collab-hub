@@ -11,6 +11,7 @@ export default defineConfig(({ mode }) => ({
   },
   // 👇 important for GitHub Pages
   base: "/coin-collab-hub/",
+  build: { sourcemap: true },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {
     alias: {
