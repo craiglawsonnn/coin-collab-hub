@@ -18,16 +18,30 @@ import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
+type CurrencyCode = string | null;
+
 interface Transaction {
   id: string;
-  date: string;
-  category: string;
+  user_id: string | null;
+  date: string;                 // ISO
+  category: string | null;
   description: string | null;
-  account: string;
-  net_income: number;
-  expense: number;
-  user_id?: string | null;
+  account: string | null;
+  payment_method?: string | null;
+
+  // money columns in your table
+  gross_income?: number | null;
+  net_income: number | null;
+  expense: number | null;
+
+  // optional currency columns (shown in screenshots)
+  currency_code?: CurrencyCode;
+  base_currency?: CurrencyCode;
+
   created_at?: string | null;
+  updated_at?: string | null;
+
+  // derived for display (not from DB)
   created_by_name?: string | null;
 }
 
@@ -38,10 +52,11 @@ interface TransactionListProps {
 
 export const TransactionList = ({ onUpdate, refreshToken }: TransactionListProps) => {
   const navigate = useNavigate();
+  const { toast } = useToast();
+
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [isFiltering, setIsFiltering] = useState(false);
-  const { toast } = useToast();
 
   // URL search params
   const [searchParams, setSearchParams] = useSearchParams();
@@ -57,30 +72,49 @@ export const TransactionList = ({ onUpdate, refreshToken }: TransactionListProps
   const [availableAccounts, setAvailableAccounts] = useState<string[]>([]);
   const [availableUsers, setAvailableUsers] = useState<{ id: string; name: string }[]>([]);
 
-  // initialize from URL and load
-  useEffect(() => {
-    const type = searchParams.get("type");
-    const categories = searchParams.get("categories");
-    const accounts = searchParams.get("accounts");
-    const users = searchParams.get("users");
+  // ---- load URL filters + first fetch
+useEffect(() => {
+  // Parse and validate URL params
+  const typeRaw = searchParams.get("type");
+  const typeParam: "all" | "income" | "expense" | undefined =
+    typeRaw === "income" || typeRaw === "expense" || typeRaw === "all"
+      ? typeRaw
+      : undefined;
 
-    if (type === "income" || type === "expense") setFilterType(type as any);
-    if (categories) setFilterCategories(categories.split(",").filter(Boolean));
-    if (accounts) setFilterAccounts(accounts.split(",").filter(Boolean));
-    if (users) setFilterUsers(users.split(",").filter(Boolean));
+  const categoriesParam = (searchParams.get("categories") || "")
+    .split(",")
+    .map(s => s.trim())
+    .filter(Boolean);
 
-    fetchAllOptions();
-    // initial fetch with URL filters
-    fetchTransactions({
-      type: type ?? undefined,
-      categories: categories ? categories.split(",").filter(Boolean) : undefined,
-      accounts: accounts ? accounts.split(",").filter(Boolean) : undefined,
-      users: users ? users.split(",").filter(Boolean) : undefined,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const accountsParam = (searchParams.get("accounts") || "")
+    .split(",")
+    .map(s => s.trim())
+    .filter(Boolean);
 
-  // refetch when refreshToken changes
+  const usersParam = (searchParams.get("users") || "")
+    .split(",")
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  if (typeParam) setFilterType(typeParam);
+  if (categoriesParam.length) setFilterCategories(categoriesParam);
+  if (accountsParam.length) setFilterAccounts(accountsParam);
+  if (usersParam.length) setFilterUsers(usersParam);
+
+  fetchAllOptions();
+
+  // initial fetch with URL filters applied
+  fetchTransactions({
+    type: typeParam,
+    categories: categoriesParam.length ? categoriesParam : undefined,
+    accounts: accountsParam.length ? accountsParam : undefined,
+    users: usersParam.length ? usersParam : undefined,
+  });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, []);
+
+
+  // refresh externally (e.g. after add/delete)
   useEffect(() => {
     fetchAllOptions();
     fetchTransactions();
@@ -89,39 +123,77 @@ export const TransactionList = ({ onUpdate, refreshToken }: TransactionListProps
 
   const fetchAllOptions = useCallback(async () => {
     try {
-      const { data, error } = await supabase.from("transactions").select("category,account,user_id").limit(1000);
+      // only select the fields we need to build filter options
+      const { data, error } = await supabase
+        .from("transactions")
+        .select("category,account,user_id")
+        .limit(1000);
+
       if (error) throw error;
+
       const cats = Array.from(new Set((data || []).map((r: any) => r.category).filter(Boolean)));
       const accs = Array.from(new Set((data || []).map((r: any) => r.account).filter(Boolean)));
       setAvailableCategories(cats as string[]);
       setAvailableAccounts(accs as string[]);
-      // derive available users from fetched transactions (RLS respected)
-      const userIds = Array.from(new Set((data || []).map((r: any) => r.user_id).filter(Boolean)));
+
+      // map users
+      const userIds = Array.from(
+        new Set((data || []).map((r: any) => r.user_id).filter(Boolean))
+      );
       if (userIds.length > 0) {
         const { data: profiles } = await supabase
           .from("profiles")
           .select("id,full_name,email")
           .in("id", userIds as string[])
           .limit(1000);
-        const usersList = (profiles || []).map((p: any) => ({
-          id: p.id,
-          name: p.full_name || p.email || p.id,
-        }));
+
+        const usersList =
+          (profiles || []).map((p: any) => ({
+            id: p.id,
+            name: p.full_name || p.email || p.id,
+          })) ?? [];
         setAvailableUsers(usersList);
       } else {
         setAvailableUsers([]);
       }
     } catch {
-      // ignore options fetch error
+      // don't block UI if this fails
     }
   }, []);
 
   const fetchTransactions = useCallback(
-    async (opts?: { type?: string; categories?: string[]; accounts?: string[]; users?: string[] }) => {
+    async (opts?: {
+      type?: "all" | "income" | "expense";
+      categories?: string[];
+      accounts?: string[];
+      users?: string[];
+    }) => {
       setIsFiltering(true);
       setLoading(true);
       try {
-        let query: any = supabase.from("transactions").select("*").order("date", { ascending: false }).limit(50);
+        // select exactly from your schema (+ currency_code)
+        let query: any = supabase
+          .from("transactions")
+          .select(
+            `
+            id,
+            user_id,
+            date,
+            category,
+            description,
+            account,
+            payment_method,
+            gross_income,
+            net_income,
+            expense,
+            currency_code,
+            base_currency,
+            created_at,
+            updated_at
+          `
+          )
+          .order("date", { ascending: false })
+          .limit(50);
 
         const type = opts?.type ?? filterType;
         const categories = opts?.categories ?? filterCategories;
@@ -131,15 +203,20 @@ export const TransactionList = ({ onUpdate, refreshToken }: TransactionListProps
         if (categories && categories.length > 0) query = query.in("category", categories);
         if (accounts && accounts.length > 0) query = query.in("account", accounts);
         if (users && users.length > 0) query = query.in("user_id", users);
-        if (type === "income") query = query.gt("net_income", 0);
-        else if (type === "expense") query = query.gt("expense", 0);
+
+        if (type === "income") {
+          query = query.gt("net_income", 0);
+        } else if (type === "expense") {
+          query = query.gt("expense", 0);
+        }
 
         const { data, error } = await query;
         if (error) throw error;
-        const raw = data || [];
 
-        // add display-friendly creator names
-        const userIds = Array.from(new Set(raw.map((r: any) => r.user_id).filter(Boolean)));
+        const raw = (data || []) as Transaction[];
+
+        // decorate with user names
+        const userIds = Array.from(new Set(raw.map((r) => r.user_id).filter(Boolean)));
         let profilesMap: Record<string, { full_name?: string | null; email?: string | null }> = {};
         if (userIds.length > 0) {
           const { data: profiles } = await supabase
@@ -150,13 +227,14 @@ export const TransactionList = ({ onUpdate, refreshToken }: TransactionListProps
           for (const p of profiles || []) profilesMap[p.id] = p;
         }
 
-        const withNames = raw.map((r: any) => ({
+        const withNames = raw.map((r) => ({
           ...r,
-          created_by_name:
-            profilesMap[r.user_id]?.full_name || profilesMap[r.user_id]?.email || null,
+          created_by_name: profilesMap[r.user_id as string]?.full_name
+            || profilesMap[r.user_id as string]?.email
+            || null,
         }));
 
-        setTransactions(withNames as Transaction[]);
+        setTransactions(withNames);
       } catch (error: any) {
         toast({
           title: "Error fetching transactions",
@@ -197,6 +275,11 @@ export const TransactionList = ({ onUpdate, refreshToken }: TransactionListProps
     fetchTransactions({ type: "all", categories: [], accounts: [] });
   };
 
+  const fmtMoney = (value: number, currency?: CurrencyCode) => {
+    const ccy = (currency || "EUR") as string;
+    return new Intl.NumberFormat(undefined, { style: "currency", currency: ccy }).format(value);
+  };
+
   if (loading) {
     return (
       <Card className="p-4 sm:p-5 md:p-6">
@@ -214,6 +297,7 @@ export const TransactionList = ({ onUpdate, refreshToken }: TransactionListProps
           <Button variant="ghost" size="sm" onClick={() => navigate("/transactions")}>
             View all
           </Button>
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" disabled={isFiltering}>
@@ -361,18 +445,18 @@ export const TransactionList = ({ onUpdate, refreshToken }: TransactionListProps
         </p>
       ) : (
         <div className="space-y-3">
-          {transactions.map((transaction) => {
-            const isIncome = Number(transaction.net_income) > 0;
-            const amount = isIncome ? Number(transaction.net_income) : Number(transaction.expense);
+          {transactions.map((t) => {
+            const isIncome = Number(t.net_income || 0) > 0;
+            const amount = isIncome ? Number(t.net_income || 0) : Number(t.expense || 0);
+            const currency = (t.currency_code || t.base_currency || "EUR") as string;
 
             return (
               <div
-                key={transaction.id}
+                key={t.id}
                 className="flex items-center justify-between rounded-xl border bg-card/60 hover:bg-card transition-colors p-3 sm:p-4 md:p-5"
               >
                 {/* LEFT */}
                 <div className="flex items-start gap-3 sm:gap-4 min-w-0">
-                  {/* icon */}
                   <div
                     className={`h-9 w-9 sm:h-10 sm:w-10 rounded-full flex items-center justify-center ${
                       isIncome ? "bg-emerald-900/30" : "bg-rose-900/30"
@@ -385,29 +469,34 @@ export const TransactionList = ({ onUpdate, refreshToken }: TransactionListProps
                     )}
                   </div>
 
-                  {/* text */}
                   <div className="min-w-0">
                     <p className="font-semibold leading-tight text-base sm:text-lg md:text-xl truncate">
-                      {transaction.description || "No description"}
+                      {t.description || "No description"}
                     </p>
 
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5 sm:gap-2">
-                      <Badge
-                        variant="secondary"
-                        className="px-2 py-0.5 text-[10px] sm:text-[11px] md:text-xs"
-                      >
-                        {transaction.category}
-                      </Badge>
+                      {t.category && (
+                        <Badge
+                          variant="secondary"
+                          className="px-2 py-0.5 text-[10px] sm:text-[11px] md:text-xs"
+                        >
+                          {t.category}
+                        </Badge>
+                      )}
+
+                      {t.account && (
+                        <span className="text-[10px] sm:text-[11px] md:text-xs text-muted-foreground">
+                          {t.account}
+                        </span>
+                      )}
 
                       <span className="text-[10px] sm:text-[11px] md:text-xs text-muted-foreground">
-                        {transaction.account}
+                        {new Date(t.date).toLocaleDateString()}
                       </span>
-                      <span className="text-[10px] sm:text-[11px] md:text-xs text-muted-foreground">
-                        {new Date(transaction.date).toLocaleDateString()}
-                      </span>
-                      {transaction.created_by_name && (
+
+                      {t.created_by_name && (
                         <span className="text-[10px] sm:text-[11px] md:text-xs text-muted-foreground truncate">
-                          Added by {String(transaction.created_by_name).split(" ")[0]}
+                          Added by {String(t.created_by_name).split(" ")[0]}
                         </span>
                       )}
                     </div>
@@ -421,13 +510,14 @@ export const TransactionList = ({ onUpdate, refreshToken }: TransactionListProps
                       isIncome ? "text-emerald-500" : "text-rose-400"
                     }`}
                   >
-                    {isIncome ? "+" : "-"}€{amount.toFixed(2)}
+                    {isIncome ? "+" : "-"}
+                    {fmtMoney(amount, currency)}
                   </div>
                   <Button
                     variant="ghost"
                     size="icon"
                     aria-label="Delete transaction"
-                    onClick={() => handleDelete(transaction.id)}
+                    onClick={() => handleDelete(t.id)}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>

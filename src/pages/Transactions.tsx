@@ -50,9 +50,14 @@ export default function TransactionsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
-  const viewingOwnerId = searchParams.get("owner") || user?.id || "";
-  const isOwn = user?.id === viewingOwnerId;
+  // const viewingOwnerId = searchParams.get("owner") || user?.id || "";
+  // const isOwn = user?.id === viewingOwnerId;
+  const ownerParam = searchParams.get("owner");
+  const isUuid = (v?: string | null) =>
+    !!v && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
 
+  const viewingOwnerId = isUuid(ownerParam) ? ownerParam! : (user?.id ?? null);
+  const isOwn = !!user && viewingOwnerId === user.id;
   const { toast } = useToast();
 
   const [transactions, setTransactions] = useState<Tx[]>([]);
@@ -93,10 +98,11 @@ export default function TransactionsPage() {
       let query = supabase
         .from("transactions")
         .select(
-          // pull audit columns if present; harmless if columns exist/are null
-          "id,user_id,date,description,category,account,net_income,expense,net_flow,created_at,updated_at,created_by,updated_by"
+          // only columns that exist in your current schema
+          "id,user_id,date,description,category,account,net_income,expense,net_flow,created_at,updated_at"
         )
         .eq("user_id", viewingOwnerId);
+
 
       if (sort === "date") query = query.order("date", { ascending: direction === "asc" });
       else query = query.order("net_flow", { ascending: direction === "asc" });
