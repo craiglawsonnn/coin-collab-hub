@@ -22,7 +22,7 @@ import {
 import { AccountsSettings } from "@/components/settings/AccountsSettings";
 import { CategoriesSettings } from "@/components/settings/CategoriesSettings";
 import { RecurringTransactions } from "@/components/settings/RecurringTransactions";
-import { Budgets } from "@/components/settings/Budgets";
+import Budgets from "@/components/settings/Budgets";
 
 export default function Settings() {
   const navigate = useNavigate();

@@ -1,52 +1,45 @@
 import { supabase } from "@/integrations/supabase/client";
 
-type FxRow = {
+export type FxRow = {
   provider: string;
-  rate_date: string;
-  base: string;
-  rates: Record<string, number>;
+  rate_date: string;              // 'YYYY-MM-DD' (ECB business day)
+  base: string;                   // e.g. 'EUR'
+  rates: Record<string, number>;  // { USD: 1.08, PLN: 4.3, ... }
 };
 
 const PROVIDER = "frankfurter";
 const BASE_DEFAULT = "EUR";
 
-/** Load today's cached rates; if missing, first caller fetches & upserts. */
-export async function ensureDailyRates(base: string = BASE_DEFAULT) {
-  // 1) Check DB first
-  const { data: dbRow, error } = await supabase
+/**
+ * Ensure we have a recent FX row for `base`.
+ * Strategy: read newest from DB → (optionally) fallback to localStorage → fetch from Frankfurter → upsert.
+ */
+export async function ensureDailyRates(base: string = BASE_DEFAULT): Promise<FxRow> {
+  // 1) DB first (newest row for base+provider)
+  const { data: dbRow } = await supabase
     .from("exchange_rates")
-    .select("*")
+    .select("provider, rate_date, base, rates")
     .eq("provider", PROVIDER)
     .eq("base", base)
     .order("rate_date", { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  // 2) If row exists from today (or you accept "latest"), return it
-  const today = new Date().toISOString().slice(0, 10);
-  if (!error && dbRow) {
-    return dbRow as FxRow;
-  }
+  if (dbRow) return dbRow as FxRow;
 
-  // 3) Throttle via localStorage (best-effort)
+  // 2) Best-effort throttle via localStorage (works fine on client)
   const lsKey = `fx:${PROVIDER}:${base}:latest`;
-  const cached = localStorage.getItem(lsKey);
-  if (cached) {
-    try {
-      return JSON.parse(cached) as FxRow;
-    } catch {}
+  if (typeof window !== "undefined") {
+    const cached = window.localStorage.getItem(lsKey);
+    if (cached) {
+      try { return JSON.parse(cached) as FxRow; } catch {}
+    }
   }
 
-  // 4) Fetch from free API (Frankfurter)
-  const res = await fetch(
-    `https://api.frankfurter.app/latest?from=${encodeURIComponent(base)}`
-  );
+  // 3) Fetch from free API (ECB). /latest returns the most recent business day.
+  const res = await fetch(`https://api.frankfurter.app/latest?from=${encodeURIComponent(base)}`);
   if (!res.ok) throw new Error("Failed to fetch FX rates");
-  const json = (await res.json()) as {
-    base: string;
-    date: string;
-    rates: Record<string, number>;
-  };
+  const json = (await res.json()) as { base: string; date: string; rates: Record<string, number> };
 
   const row: FxRow = {
     provider: PROVIDER,
@@ -55,31 +48,41 @@ export async function ensureDailyRates(base: string = BASE_DEFAULT) {
     rates: json.rates,
   };
 
-  // 5) Upsert into Supabase (idempotent thanks to unique constraint)
-  await supabase
+  // 4) Upsert (idempotent due to unique (provider, rate_date, base))
+  const { error: upsertErr } = await supabase
     .from("exchange_rates")
     .upsert(row, { onConflict: "provider,rate_date,base" });
+  if (upsertErr) {
+    // Non-fatal: UI can still use the fetched `row`
+    console.warn("FX upsert warning:", upsertErr.message);
+  }
 
-  localStorage.setItem(lsKey, JSON.stringify(row));
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(lsKey, JSON.stringify(row));
+  }
   return row;
 }
 
-/** Convert minor units via cross rate from a DB row */
-export function convertMinor(
-  amountMinor: number,
-  from: string,
-  to: string,
-  fx: FxRow
-) {
+/**
+ * Convert a minor-unit amount (e.g., cents) from -> to using a single FxRow.
+ * Frankfurter quotes are target-per-base (e.g., base=EUR, USD=1.08 means 1 EUR = 1.08 USD).
+ */
+export function convertMinor(amountMinor: number, from: string, to: string, fx: FxRow): number {
   if (from === to) return amountMinor;
+
+  // base -> quote
   if (from === fx.base) {
     const rTo = fx.rates[to] ?? 1;
     return Math.round(amountMinor * rTo);
   }
+
+  // quote -> base
   if (to === fx.base) {
     const rFrom = fx.rates[from] ?? 1;
     return Math.round(amountMinor / rFrom);
   }
+
+  // cross via base
   const rFrom = fx.rates[from] ?? 1;
   const rTo = fx.rates[to] ?? 1;
   return Math.round(amountMinor * (rTo / rFrom));

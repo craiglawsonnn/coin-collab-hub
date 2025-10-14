@@ -1,33 +1,48 @@
-import { useEffect, useState } from "react";
-import { ensureDailyRates } from "@/lib/fx";
+// src/hooks/useFxRates.ts
+import { useCallback, useEffect, useState } from "react";
+import { ensureDailyRates, type FxRow } from "@/lib/fx";
 
 export function useFxRates(base: string = "EUR") {
-  const [data, setData] = useState<{
-    base: string;
-    date: string;
-    rates: Record<string, number>;
-  } | null>(null);
+  const [data, setData] = useState<FxRow | null>(null);
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<unknown>(null);
+  const [error, setErr] = useState<unknown>(null);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const row = await ensureDailyRates(base);
+      setData(row);
+      setErr(null);
+    } catch (e) {
+      setErr(e);
+    } finally {
+      setLoading(false);
+    }
+  }, [base]);
 
   useEffect(() => {
-    let alive = true;
+    let cancelled = false;
     (async () => {
       try {
         setLoading(true);
         const row = await ensureDailyRates(base);
-        if (!alive) return;
-        setData({ base: row.base, date: row.rate_date, rates: row.rates });
+        if (!cancelled) {
+          setData(row);
+          setErr(null);
+        }
       } catch (e) {
-        if (alive) setErr(e);
+        if (!cancelled) setErr(e);
       } finally {
-        if (alive) setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
     return () => {
-      alive = false;
+      cancelled = true;
     };
   }, [base]);
 
-  return { data, loading, error: err };
+  const isStale =
+    data ? new Date().toISOString().slice(0, 10) !== data.rate_date : true;
+
+  return { data, loading, error, isStale, refresh };
 }

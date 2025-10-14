@@ -8,7 +8,9 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui/select";
-import { Eye, EyeOff, Plus, TrendingUp, TrendingDown, LogOut, LayoutGrid, MoreVertical } from "lucide-react";
+import {
+  Eye, EyeOff, Plus, TrendingUp, TrendingDown, LogOut, LayoutGrid, MoreVertical,
+} from "lucide-react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import {
   DropdownMenu,
@@ -51,6 +53,11 @@ import { useIsMobile } from "@/hooks/use-mobile";
 
 type Period = "day" | "week" | "month" | "year";
 
+/** Which balance to show on the main card */
+type BalanceView =
+  | { mode: "ALL" }
+  | { mode: "ACCOUNT"; id: string; name: string; currency: string };
+
 const Dashboard = () => {
   const [showTransactionForm, setShowTransactionForm] = useState(false);
   const [currentBalance, setCurrentBalance] = useState(0);
@@ -90,6 +97,24 @@ const Dashboard = () => {
       document.documentElement.classList.contains("dark")
   );
 
+  /** Which balance the main card shows (persist to localStorage) */
+  const [balanceView, setBalanceView] = useState<BalanceView>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("balance:main") || '{"mode":"ALL"}');
+    } catch {
+      return { mode: "ALL" };
+    }
+  });
+  useEffect(() => {
+    localStorage.setItem("balance:main", JSON.stringify(balanceView));
+  }, [balanceView]);
+
+  // ------- NEW: monthly overall budget state -------
+  const [monthlyBudget, setMonthlyBudget] = useState<{
+    amount: number;
+    currency: string;
+  } | null>(null);
+
   const saveCardPrefs = async (next: {
     showBalanceCard: boolean;
     showIncomeCard: boolean;
@@ -123,7 +148,7 @@ const Dashboard = () => {
     }
   };
 
-  // ✅ debug log when theme flips
+  // debug log when theme flips
   useEffect(() => {
     if (typeof document !== "undefined") {
       console.log(
@@ -178,7 +203,38 @@ const Dashboard = () => {
 
   useEffect(() => {
     if (user) fetchDashboardData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, incomePeriod, expensePeriod, viewingOwnerId]);
+
+  // ------- NEW: fetch latest active overall monthly budget for viewed owner -------
+  useEffect(() => {
+    if (!viewingOwnerId) return;
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from("budgets")
+          .select("amount, currency_code")
+          .eq("user_id", viewingOwnerId)
+          .eq("is_active", true)
+          .eq("period", "monthly")
+          .is("category", null)
+          .order("created_at", { ascending: false })
+          .limit(1);
+        if (error) throw error;
+        if (data && data.length) {
+          setMonthlyBudget({
+            amount: Number(data[0].amount || 0),
+            currency: data[0].currency_code || "EUR",
+          });
+        } else {
+          setMonthlyBudget(null);
+        }
+      } catch (e: any) {
+        console.warn("Failed to load monthly budget:", e?.message || e);
+        setMonthlyBudget(null);
+      }
+    })();
+  }, [viewingOwnerId, refreshToken]);
 
   const inPeriod = (dateStr: string, p: Period) => {
     const now = new Date();
@@ -217,7 +273,7 @@ const Dashboard = () => {
       const tx = (data as any[]) || [];
       setTransactions(tx);
 
-      // Balance = total net_flow overall
+      // Balance = total net_flow overall (major units)
       const totalBalance = tx.reduce((sum, t) => sum + Number(t.net_flow || 0), 0);
       setCurrentBalance(totalBalance);
 
@@ -248,7 +304,7 @@ const Dashboard = () => {
       ? "This month"
       : "This year";
 
-  // --- local apply for a single inserted transaction row (if provided)
+  // local apply for a single inserted transaction row (if provided)
   const applyLocalTx = (tx: any) => {
     setTransactions((prev) => [tx, ...prev]);
     setCurrentBalance((prev) => prev + Number(tx.net_flow || 0));
@@ -261,7 +317,7 @@ const Dashboard = () => {
     }
   };
 
-  // --- after balance adjustment
+  // after balance adjustment
   const handleBalanceAdjusted = (tx?: any) => {
     if (tx) {
       applyLocalTx(tx);
@@ -271,12 +327,13 @@ const Dashboard = () => {
     setRefreshToken((r) => r + 1);
   };
 
-  // --- after adding a transaction
+  // after adding a transaction
   const handleTransactionAddedWithRefresh = (tx?: any) => {
     setShowTransactionForm(false);
     setRefreshToken((r) => r + 1);
   };
 
+  // ---- EARLY RETURNS MUST COME AFTER ALL HOOKS ----
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -288,6 +345,18 @@ const Dashboard = () => {
 
   const anyHidden = !showBalanceCard || !showIncomeCard || !showExpensesCard;
 
+  /** Compute what the main card should show (no hooks) */
+  const displayBalance =
+    balanceView.mode === "ALL"
+      ? currentBalance
+      : transactions
+          .filter((t) => t.account === balanceView.name)
+          .reduce((s, t) => s + Number(t.net_flow || 0), 0);
+
+  /** Money formatter (uses account currency if a single account is selected) */
+  const fmtMoney = (amount: number, currency = "EUR") =>
+    new Intl.NumberFormat(undefined, { style: "currency", currency }).format(amount);
+
   return (
     <LeftNav>
       {/* page shell */}
@@ -295,7 +364,6 @@ const Dashboard = () => {
         {/* Background (behind everything on the page) */}
         <div className="fixed inset-0 z-0 pointer-events-none">
           <div className="absolute inset-0 isolate">
-            {/* Wrap the canvas so we can filter it in light mode without touching UI */}
             <div
               className={[
                 "absolute inset-0 will-change-[filter,opacity] transition-[filter,opacity] duration-300",
@@ -320,7 +388,6 @@ const Dashboard = () => {
               />
             </div>
 
-            {/* Optional pastel lift in light mode (doesn't affect UI) */}
             {!isDark && (
               <div
                 className="absolute inset-0 pointer-events-none transition-opacity duration-300"
@@ -340,7 +407,6 @@ const Dashboard = () => {
         <header className="relative z-10 border-b bg-card/80 backdrop-blur">
           <div className="w-full px-4 py-4">
             <div className="flex flex-wrap items-center gap-3">
-              {/* Left: title + mobile burger */}
               <div className="flex items-center gap-2 min-w-0">
                 <SidebarTrigger className="md:hidden -ml-1" />
                 <div className="min-w-0">
@@ -353,9 +419,7 @@ const Dashboard = () => {
                 </div>
               </div>
 
-              {/* Right: desktop actions */}
               <div className="ml-auto hidden md:flex items-center gap-2">
-                {/* Eye/EyeOff visibility dropdown */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" size="icon" aria-label="Show/Hide cards">
@@ -415,7 +479,6 @@ const Dashboard = () => {
 
                 <ThemeToggle />
 
-                {/* Desktop Add view */}
                 <Dialog>
                   <DialogTrigger asChild>
                     <Button className="mr-2" variant="outline" size="sm">
@@ -479,7 +542,6 @@ const Dashboard = () => {
 
               {/* Right: mobile toolbar */}
               <div className="ml-auto flex items-center gap-1 md:hidden">
-                {/* Quick add transaction */}
                 <Button
                   size="icon"
                   className="h-9 w-9 bg-primary text-primary-foreground"
@@ -489,10 +551,8 @@ const Dashboard = () => {
                   <Plus className="h-4 w-4" />
                 </Button>
 
-                {/* Theme */}
                 <ThemeToggle />
 
-                {/* More menu (Add view, Logout) */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button size="icon" variant="ghost" aria-label="More">
@@ -508,7 +568,6 @@ const Dashboard = () => {
                       Add transaction
                     </DropdownMenuItem>
 
-                    {/* Mobile Add View via dialog */}
                     <Dialog>
                       <DialogTrigger asChild>
                         <DropdownMenuItem className="gap-2">
@@ -567,12 +626,21 @@ const Dashboard = () => {
             {showBalanceCard && (
               <Card className="p-6 bg-gradient-to-br from-card to-card/80 shadow-lg hover:shadow-xl transition-shadow">
                 <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm font-medium text-muted-foreground">Current Balance</p>
-                  <AccountBalances />
+                  <p className="text-sm font-medium text-muted-foreground">
+                    {balanceView.mode === "ALL" ? "Current Balance" : balanceView.name}
+                  </p>
+                  <AccountBalances selected={balanceView} onSelect={setBalanceView} />
                 </div>
 
-                <p className="text-3xl font-bold text-foreground">€{currentBalance.toFixed(2)}</p>
-                <p className="text-xs text-muted-foreground mt-2">All accounts combined</p>
+                <p className="text-3xl font-bold text-foreground">
+                  {fmtMoney(
+                    displayBalance,
+                    balanceView.mode === "ACCOUNT" ? balanceView.currency : "EUR"
+                  )}
+                </p>
+                <p className="text-xs text-muted-foreground mt-2">
+                  {balanceView.mode === "ALL" ? "All accounts combined" : `Only ${balanceView.name}`}
+                </p>
 
                 <div className="mt-3">
                   <BalanceAdjustment
@@ -589,9 +657,10 @@ const Dashboard = () => {
                   <p className="text-sm font-medium text-success">{titleFor(incomePeriod)} Income</p>
                   <TrendingUp className="h-5 w-5 text-success" />
                 </div>
-                <p className="text-3xl font-bold text-success">€{incomeTotal.toFixed(2)}</p>
+                <p className="text-3xl font-bold text-success">
+                  {fmtMoney(incomeTotal, "EUR")}
+                </p>
                 <p className="text-xs text-success/70 mt-2">{titleFor(incomePeriod)}</p>
-                {/* Income period selector */}
                 <div className="mt-3 w-full max-w-[9.5rem] self-start">
                   <Select value={incomePeriod} onValueChange={(v) => setIncomePeriod(v as any)}>
                     <SelectTrigger
@@ -623,9 +692,51 @@ const Dashboard = () => {
                   <p className="text-sm font-medium text-destructive">{titleFor(expensePeriod)} Expenses</p>
                   <TrendingDown className="h-5 w-5 text-destructive" />
                 </div>
-                <p className="text-3xl font-bold text-destructive">€{expenseTotal.toFixed(2)}</p>
+                <p className="text-3xl font-bold text-destructive">
+                  {fmtMoney(expenseTotal, "EUR")}
+                </p>
                 <p className="text-xs text-destructive/70 mt-2">{titleFor(expensePeriod)}</p>
-                {/* Expense period selector */}
+
+                {/* ------- NEW: Budget progress (only for monthly overall budget) ------- */}
+                {expensePeriod === "month" && monthlyBudget && (
+                  <div className="mt-3">
+                    {(() => {
+                      const spent = Number(expenseTotal || 0);
+                      const budget = monthlyBudget.amount;
+                      const pct = budget > 0 ? (spent / budget) * 100 : 0;
+                      const clamped = Math.min(100, Math.max(0, pct));
+                      const over = budget > 0 && spent > budget;
+
+                      return (
+                        <>
+                          <div className="flex items-center justify-between text-xs text-destructive/80">
+                            <span>Budget</span>
+                            <span className="tabular-nums">
+                              {fmtMoney(spent, monthlyBudget.currency)} / {fmtMoney(budget, monthlyBudget.currency)}{" "}
+                              ({Math.round(pct)}%)
+                            </span>
+                          </div>
+                          <div className="mt-1 h-2 rounded-full bg-destructive/20 overflow-hidden">
+                            <div
+                              className={`h-full ${over ? "bg-destructive" : "bg-destructive/70"}`}
+                              style={{ width: `${clamped}%` }}
+                            />
+                          </div>
+                          {over && (
+                            <p className="mt-1 text-[12px] text-destructive">
+                              You’re over budget by{" "}
+                              <span className="font-medium">
+                                {fmtMoney(spent - budget, monthlyBudget.currency)}
+                              </span>
+                              .
+                            </p>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
+
                 <div className="mt-3 w-full max-w-[9.5rem] self-start">
                   <Select value={expensePeriod} onValueChange={(v) => setExpensePeriod(v as any)}>
                     <SelectTrigger
@@ -648,7 +759,6 @@ const Dashboard = () => {
                     </SelectContent>
                   </Select>
                 </div>
-
               </Card>
             )}
           </div>
@@ -678,7 +788,7 @@ const Dashboard = () => {
         )}
       </div>
 
-      {/* DEBUG: shows which branch you're in + current <html> classes */}
+      {/* DEBUG overlay */}
       <div
         style={{
           position: "fixed",
