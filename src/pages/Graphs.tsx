@@ -4,7 +4,7 @@ import ThemeToggle from "@/components/ThemeToggle";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useSearchParams } from "react-router-dom";
-import { Pencil } from "lucide-react";
+import { Pencil, MoreVertical } from "lucide-react";
 
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu";
 import { Trash2, Plus, Palette as PaletteIcon, Save, SaveAll, X } from "lucide-react";
 
 import {
@@ -40,6 +48,8 @@ import {
   Pie,
   Cell,
 } from "recharts";
+
+import { SidebarTrigger } from "@/components/ui/sidebar";
 
 /* ----------------------------- Types & helpers ---------------------------- */
 
@@ -521,7 +531,6 @@ export default function Graphs() {
         .eq("id", activeView.id)
         .eq("user_id", user.id);
       if (!error) {
-        // refresh list
         const { data } = await supabase
           .from("graph_views").select("id,name,charts").eq("user_id", user.id).order("updated_at", { ascending: false });
         if (data) setViews(data as GraphView[]);
@@ -529,7 +538,6 @@ export default function Graphs() {
       return;
     }
 
-    // Save as (ask for a name)
     const name = window.prompt("Name this view", activeView?.name || "My view");
     if (!name) return;
 
@@ -562,28 +570,26 @@ export default function Graphs() {
   }
 
   async function renameView() {
-  if (!user || !activeView) return;
+    if (!user || !activeView) return;
 
-  const proposed = window.prompt("Rename view", activeView.name);
-  if (!proposed) return;
+    const proposed = window.prompt("Rename view", activeView.name);
+    if (!proposed) return;
 
-  const name = proposed.trim();
-  if (!name || name === activeView.name) return;
+    const name = proposed.trim();
+    if (!name || name === activeView.name) return;
 
-  const { error } = await supabase
-    .from("graph_views")
-    .update({ name })
-    .eq("id", activeView.id)
-    .eq("user_id", user.id);
+    const { error } = await supabase
+      .from("graph_views")
+      .update({ name })
+      .eq("id", activeView.id)
+      .eq("user_id", user.id);
 
-  if (!error) {
-    // update local list + keep selection
-    setViews((prev) => prev.map((v) => (v.id === activeView.id ? { ...v, name } : v)));
-  } else {
-    // optional: toast/error handling if you use your toast hook here
-    console.error(error);
+    if (!error) {
+      setViews((prev) => prev.map((v) => (v.id === activeView.id ? { ...v, name } : v)));
+    } else {
+      console.error(error);
+    }
   }
-}
 
   function applyView(v: GraphView) {
     setActiveViewId(v.id);
@@ -594,56 +600,133 @@ export default function Graphs() {
     <LeftNav>
       <header className="relative z-10 border-b bg-card/80 backdrop-blur">
         <div className="w-full px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-foreground">Graphs</h1>
-              <p className="text-sm text-muted-foreground">Visualize your transactions with customizable charts.</p>
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Left: burger + title */}
+            <div className="flex items-center gap-2 min-w-0">
+              {/* Mobile burger to open/collapse the LeftNav sidebar */}
+              <SidebarTrigger className="md:hidden -ml-1" />
+
+              <div className="min-w-0">
+                <h1 className="text-2xl font-bold text-foreground truncate">Graphs</h1>
+                <p className="text-sm text-muted-foreground">
+                  Visualize your transactions with customizable charts.
+                </p>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              {/* Views picker */}
-              <Select
-                value={activeViewId ?? ""}
-                onValueChange={(id) => {
-                  if (!id) {
-                    setActiveViewId(null);
-                    return;
-                  }
-                  const v = views.find((vv) => vv.id === id);
-                  if (v) applyView(v);
-                }}
-              >
-                <SelectTrigger className="w-56">
-                  <SelectValue placeholder="My saved views" />
-                </SelectTrigger>
-                <SelectContent>
-                  {views.length === 0 && <div className="px-3 py-1 text-sm text-muted-foreground">No saved views yet</div>}
-                  {views.map((v) => (
-                    <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            {/* Right actions: responsive */}
+            <div className="ml-auto flex w-full md:w-auto flex-col md:flex-row gap-2">
+              {/* Views & primary actions row */}
+              <div className="flex items-center gap-2 overflow-x-auto md:overflow-visible shrink-0">
+                {/* Views picker */}
+                <Select
+                  value={activeViewId ?? ""}
+                  onValueChange={(id) => {
+                    if (!id) {
+                      setActiveViewId(null);
+                      return;
+                    }
+                    const v = views.find((vv) => vv.id === id);
+                    if (v) applyView(v);
+                  }}
+                >
+                  <SelectTrigger className="w-[240px] md:w-[260px] h-9">
+                    <SelectValue placeholder="My saved views" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {views.length === 0 && (
+                      <div className="px-3 py-1 text-sm text-muted-foreground">
+                        No saved views yet
+                      </div>
+                    )}
+                    {views.map((v) => (
+                      <SelectItem key={v.id} value={v.id}>
+                        {v.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
 
-              <Button variant="outline" onClick={loadExample}>Load Example View</Button>
+                {/* Primary buttons (compact) */}
+                <Button variant="outline" size="sm" onClick={loadExample} className="whitespace-nowrap">
+                  Load Example View
+                </Button>
+                <Button size="sm" onClick={() => setBuilderOpen(true)} className="whitespace-nowrap">
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add Graph
+                </Button>
 
-              <Button onClick={() => setBuilderOpen(true)}>
-                <Plus className="h-4 w-4 mr-1" /> Add Graph
-              </Button>
-              <Button variant="outline" onClick={renameView} disabled={!activeView}>
-              <Pencil className="h-4 w-4 mr-1" /> Rename
-              </Button>
+                {/* Desktop-only full toolbar */}
+                <div className="hidden md:flex items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={renameView} disabled={!activeView}>
+                    <Pencil className="h-4 w-4 mr-1" />
+                    Rename
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => saveView(true)}
+                    disabled={!activeView}
+                  >
+                    <Save className="h-4 w-4 mr-1" />
+                    Save View
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => saveView(false)}>
+                    <SaveAll className="h-4 w-4 mr-1" />
+                    Save As
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={deleteView}
+                    disabled={!activeView}
+                  >
+                    <Trash2 className="h-4 w-4 mr-1" />
+                    Delete
+                  </Button>
+                  <ThemeToggle />
+                </div>
 
-              <Button variant="outline" onClick={() => saveView(true)} disabled={!activeView}>
-                <Save className="h-4 w-4 mr-1" /> Save View
-              </Button>
-              <Button variant="outline" onClick={() => saveView(false)}>
-                <SaveAll className="h-4 w-4 mr-1" /> Save As
-              </Button>
-              <Button variant="destructive" onClick={deleteView} disabled={!activeView}>
-                <Trash2 className="h-4 w-4 mr-1" /> Delete
-              </Button>
-
-              <ThemeToggle />
+                {/* Mobile/Small screens: collapse secondary actions into a More menu */}
+                <div className="md:hidden">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" aria-label="More">
+                        <MoreVertical className="h-5 w-5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-44">
+                      <DropdownMenuLabel>View actions</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={renameView} disabled={!activeView}>
+                        Rename
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => saveView(true)} disabled={!activeView}>
+                        Save View
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => saveView(false)}>
+                        Save As
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        className="text-destructive"
+                        onClick={deleteView}
+                        disabled={!activeView}
+                      >
+                        Delete
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem asChild>
+                        {/* keep ThemeToggle inside menu for mobile */}
+                        <div className="flex items-center">
+                          <ThemeToggle />
+                          <span className="ml-2">Theme</span>
+                        </div>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -653,7 +736,7 @@ export default function Graphs() {
         {charts.length === 0 ? (
           <Card className="p-8 bg-card/80 text-muted-foreground">
             No graphs yet. Click <span className="font-medium text-foreground">Add Graph</span> to create one,
-            or <span className="font-medium text-foreground">Load Example View</span>.  
+            or <span className="font-medium text-foreground">Load Example View</span>.{" "}
             Use <span className="font-medium text-foreground">Save As</span> to store your layout.
           </Card>
         ) : (

@@ -59,18 +59,18 @@ export const TransactionList = ({ onUpdate, refreshToken }: TransactionListProps
 
   // initialize from URL and load
   useEffect(() => {
-  const type = searchParams.get("type");
+    const type = searchParams.get("type");
     const categories = searchParams.get("categories");
     const accounts = searchParams.get("accounts");
-  const users = searchParams.get("users");
+    const users = searchParams.get("users");
 
     if (type === "income" || type === "expense") setFilterType(type as any);
     if (categories) setFilterCategories(categories.split(",").filter(Boolean));
     if (accounts) setFilterAccounts(accounts.split(",").filter(Boolean));
-  if (users) setFilterUsers(users.split(",").filter(Boolean));
+    if (users) setFilterUsers(users.split(",").filter(Boolean));
 
     fetchAllOptions();
-    // do initial fetch with applied URL filters
+    // initial fetch with URL filters
     fetchTransactions({
       type: type ?? undefined,
       categories: categories ? categories.split(",").filter(Boolean) : undefined,
@@ -80,7 +80,7 @@ export const TransactionList = ({ onUpdate, refreshToken }: TransactionListProps
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // refetch when refreshToken changes (e.g., new transaction was added elsewhere)
+  // refetch when refreshToken changes
   useEffect(() => {
     fetchAllOptions();
     fetchTransactions();
@@ -89,23 +89,30 @@ export const TransactionList = ({ onUpdate, refreshToken }: TransactionListProps
 
   const fetchAllOptions = useCallback(async () => {
     try {
-      const { data, error } = await supabase.from("transactions").select("category,account").limit(1000);
+      const { data, error } = await supabase.from("transactions").select("category,account,user_id").limit(1000);
       if (error) throw error;
       const cats = Array.from(new Set((data || []).map((r: any) => r.category).filter(Boolean)));
       const accs = Array.from(new Set((data || []).map((r: any) => r.account).filter(Boolean)));
       setAvailableCategories(cats as string[]);
       setAvailableAccounts(accs as string[]);
-      // derive available users from the transactions we fetched (will obey RLS)
+      // derive available users from fetched transactions (RLS respected)
       const userIds = Array.from(new Set((data || []).map((r: any) => r.user_id).filter(Boolean)));
       if (userIds.length > 0) {
-        const { data: profiles } = await supabase.from("profiles").select("id,full_name,email").in("id", userIds as string[]).limit(1000);
-        const usersList = (profiles || []).map((p: any) => ({ id: p.id, name: p.full_name || p.email || p.id }));
+        const { data: profiles } = await supabase
+          .from("profiles")
+          .select("id,full_name,email")
+          .in("id", userIds as string[])
+          .limit(1000);
+        const usersList = (profiles || []).map((p: any) => ({
+          id: p.id,
+          name: p.full_name || p.email || p.id,
+        }));
         setAvailableUsers(usersList);
       } else {
         setAvailableUsers([]);
       }
-    } catch (e) {
-      // don't crash the UI on options fetch
+    } catch {
+      // ignore options fetch error
     }
   }, []);
 
@@ -116,45 +123,37 @@ export const TransactionList = ({ onUpdate, refreshToken }: TransactionListProps
       try {
         let query: any = supabase.from("transactions").select("*").order("date", { ascending: false }).limit(50);
 
-  const type = opts?.type ?? filterType;
-  const categories = opts?.categories ?? filterCategories;
-  const accounts = opts?.accounts ?? filterAccounts;
-  const users = opts?.users ?? filterUsers;
+        const type = opts?.type ?? filterType;
+        const categories = opts?.categories ?? filterCategories;
+        const accounts = opts?.accounts ?? filterAccounts;
+        const users = opts?.users ?? filterUsers;
 
-        if (categories && categories.length > 0) {
-          query = query.in("category", categories);
-        }
-
-        if (accounts && accounts.length > 0) {
-          query = query.in("account", accounts);
-        }
-
-        if (users && users.length > 0) {
-          query = query.in("user_id", users);
-        }
-
-        if (type === "income") {
-          query = query.gt("net_income", 0);
-        } else if (type === "expense") {
-          query = query.gt("expense", 0);
-        }
+        if (categories && categories.length > 0) query = query.in("category", categories);
+        if (accounts && accounts.length > 0) query = query.in("account", accounts);
+        if (users && users.length > 0) query = query.in("user_id", users);
+        if (type === "income") query = query.gt("net_income", 0);
+        else if (type === "expense") query = query.gt("expense", 0);
 
         const { data, error } = await query;
-
         if (error) throw error;
         const raw = data || [];
 
-        // fetch profile names for the transactions' user_ids
+        // add display-friendly creator names
         const userIds = Array.from(new Set(raw.map((r: any) => r.user_id).filter(Boolean)));
         let profilesMap: Record<string, { full_name?: string | null; email?: string | null }> = {};
         if (userIds.length > 0) {
-          const { data: profiles } = await supabase.from("profiles").select("id,full_name,email").in("id", userIds as string[]).limit(1000);
+          const { data: profiles } = await supabase
+            .from("profiles")
+            .select("id,full_name,email")
+            .in("id", userIds as string[])
+            .limit(1000);
           for (const p of profiles || []) profilesMap[p.id] = p;
         }
 
         const withNames = raw.map((r: any) => ({
           ...r,
-          created_by_name: profilesMap[r.user_id]?.full_name || profilesMap[r.user_id]?.email || null,
+          created_by_name:
+            profilesMap[r.user_id]?.full_name || profilesMap[r.user_id]?.email || null,
         }));
 
         setTransactions(withNames as Transaction[]);
@@ -175,12 +174,10 @@ export const TransactionList = ({ onUpdate, refreshToken }: TransactionListProps
   const handleDelete = async (id: string) => {
     try {
       const { error } = await supabase.from("transactions").delete().eq("id", id);
-
       if (error) throw error;
 
       toast({ title: "Transaction deleted" });
-      // refetch with current filters
-      fetchTransactions();
+      fetchTransactions(); // refetch with current filters
       onUpdate?.();
     } catch (error: any) {
       toast({
@@ -196,26 +193,27 @@ export const TransactionList = ({ onUpdate, refreshToken }: TransactionListProps
     setFilterCategories([]);
     setFilterAccounts([]);
     setFilterUsers([]);
-    // clear URL
     setSearchParams({});
     fetchTransactions({ type: "all", categories: [], accounts: [] });
   };
 
   if (loading) {
     return (
-      <Card className="p-6">
-        <h2 className="text-xl font-bold mb-6">Recent Transactions</h2>
-        <p className="text-muted-foreground">Loading...</p>
+      <Card className="p-4 sm:p-5 md:p-6">
+        <h2 className="text-lg sm:text-xl font-bold mb-4 sm:mb-6">Recent Transactions</h2>
+        <p className="text-muted-foreground text-sm">Loading...</p>
       </Card>
     );
   }
 
   return (
-    <Card className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-bold">Recent Transactions</h2>
+    <Card className="p-4 sm:p-5 md:p-6">
+      <div className="flex items-center justify-between mb-4 sm:mb-6">
+        <h2 className="text-lg sm:text-xl font-bold">Recent Transactions</h2>
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={() => navigate('/transactions')}>View all</Button>
+          <Button variant="ghost" size="sm" onClick={() => navigate("/transactions")}>
+            View all
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" disabled={isFiltering}>
@@ -235,9 +233,15 @@ export const TransactionList = ({ onUpdate, refreshToken }: TransactionListProps
                 onValueChange={(v) => {
                   setFilterType(v as any);
                   const params: any = Object.fromEntries(searchParams.entries());
-                  if (v === "all") delete params.type; else params.type = v;
+                  if (v === "all") delete params.type;
+                  else params.type = v;
                   setSearchParams(params);
-                  fetchTransactions({ type: v as any, categories: filterCategories, accounts: filterAccounts });
+                  fetchTransactions({
+                    type: v as any,
+                    categories: filterCategories,
+                    accounts: filterAccounts,
+                    users: filterUsers,
+                  });
                 }}
               >
                 <DropdownMenuRadioItem value="all">All</DropdownMenuRadioItem>
@@ -256,12 +260,20 @@ export const TransactionList = ({ onUpdate, refreshToken }: TransactionListProps
                     key={c}
                     checked={filterCategories.includes(c)}
                     onCheckedChange={() => {
-                      const next = filterCategories.includes(c) ? filterCategories.filter((x) => x !== c) : [...filterCategories, c];
+                      const next = filterCategories.includes(c)
+                        ? filterCategories.filter((x) => x !== c)
+                        : [...filterCategories, c];
                       setFilterCategories(next);
                       const params: any = Object.fromEntries(searchParams.entries());
-                      if (next.length) params.categories = next.join(","); else delete params.categories;
+                      if (next.length) params.categories = next.join(",");
+                      else delete params.categories;
                       setSearchParams(params);
-                      fetchTransactions({ type: filterType, categories: next, accounts: filterAccounts });
+                      fetchTransactions({
+                        type: filterType,
+                        categories: next,
+                        accounts: filterAccounts,
+                        users: filterUsers,
+                      });
                     }}
                   >
                     {filterCategories.includes(c) ? "✓ " : ""}
@@ -281,12 +293,20 @@ export const TransactionList = ({ onUpdate, refreshToken }: TransactionListProps
                     key={a}
                     checked={filterAccounts.includes(a)}
                     onCheckedChange={() => {
-                      const next = filterAccounts.includes(a) ? filterAccounts.filter((x) => x !== a) : [...filterAccounts, a];
+                      const next = filterAccounts.includes(a)
+                        ? filterAccounts.filter((x) => x !== a)
+                        : [...filterAccounts, a];
                       setFilterAccounts(next);
                       const params: any = Object.fromEntries(searchParams.entries());
-                      if (next.length) params.accounts = next.join(","); else delete params.accounts;
+                      if (next.length) params.accounts = next.join(",");
+                      else delete params.accounts;
                       setSearchParams(params);
-                      fetchTransactions({ type: filterType, categories: filterCategories, accounts: next });
+                      fetchTransactions({
+                        type: filterType,
+                        categories: filterCategories,
+                        accounts: next,
+                        users: filterUsers,
+                      });
                     }}
                   >
                     {filterAccounts.includes(a) ? "✓ " : ""}
@@ -306,12 +326,20 @@ export const TransactionList = ({ onUpdate, refreshToken }: TransactionListProps
                     key={u.id}
                     checked={filterUsers.includes(u.id)}
                     onCheckedChange={() => {
-                      const next = filterUsers.includes(u.id) ? filterUsers.filter((x) => x !== u.id) : [...filterUsers, u.id];
+                      const next = filterUsers.includes(u.id)
+                        ? filterUsers.filter((x) => x !== u.id)
+                        : [...filterUsers, u.id];
                       setFilterUsers(next);
                       const params: any = Object.fromEntries(searchParams.entries());
-                      if (next.length) params.users = next.join(","); else delete params.users;
+                      if (next.length) params.users = next.join(",");
+                      else delete params.users;
                       setSearchParams(params);
-                      fetchTransactions({ type: filterType, categories: filterCategories, accounts: filterAccounts, users: next });
+                      fetchTransactions({
+                        type: filterType,
+                        categories: filterCategories,
+                        accounts: filterAccounts,
+                        users: next,
+                      });
                     }}
                   >
                     {filterUsers.includes(u.id) ? "✓ " : ""}
@@ -328,7 +356,9 @@ export const TransactionList = ({ onUpdate, refreshToken }: TransactionListProps
       </div>
 
       {transactions.length === 0 ? (
-        <p className="text-muted-foreground text-center py-8">No transactions yet. Add your first transaction to get started!</p>
+        <p className="text-muted-foreground text-center py-8 text-sm sm:text-base">
+          No transactions yet. Add your first transaction to get started!
+        </p>
       ) : (
         <div className="space-y-3">
           {transactions.map((transaction) => {
@@ -338,52 +368,65 @@ export const TransactionList = ({ onUpdate, refreshToken }: TransactionListProps
             return (
               <div
                 key={transaction.id}
-                className="flex items-center justify-between p-4 rounded-lg border bg-card/50 hover:bg-card transition-colors"
+                className="flex items-center justify-between rounded-xl border bg-card/60 hover:bg-card transition-colors p-3 sm:p-4 md:p-5"
               >
-                <div className="flex items-center gap-4">
+                {/* LEFT */}
+                <div className="flex items-start gap-3 sm:gap-4 min-w-0">
+                  {/* icon */}
                   <div
-                    className={`p-2 rounded-full ${
-                      isIncome
-                        ? "bg-success/10"
-                        : "bg-destructive/10"
+                    className={`h-9 w-9 sm:h-10 sm:w-10 rounded-full flex items-center justify-center ${
+                      isIncome ? "bg-emerald-900/30" : "bg-rose-900/30"
                     }`}
                   >
                     {isIncome ? (
-                      <ArrowUpRight className="h-5 w-5 text-success" />
+                      <ArrowUpRight className="h-5 w-5 sm:h-6 sm:w-6 text-emerald-400" />
                     ) : (
-                      <ArrowDownRight className="h-5 w-5 text-destructive" />
+                      <ArrowDownRight className="h-5 w-5 sm:h-6 sm:w-6 text-rose-400" />
                     )}
                   </div>
-                  <div>
-                    <p className="font-medium">{transaction.description || "No description"}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <Badge variant="secondary" className="text-xs">
+
+                  {/* text */}
+                  <div className="min-w-0">
+                    <p className="font-semibold leading-tight text-base sm:text-lg md:text-xl truncate">
+                      {transaction.description || "No description"}
+                    </p>
+
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5 sm:gap-2">
+                      <Badge
+                        variant="secondary"
+                        className="px-2 py-0.5 text-[10px] sm:text-[11px] md:text-xs"
+                      >
                         {transaction.category}
                       </Badge>
-                      <span className="text-xs text-muted-foreground">
+
+                      <span className="text-[10px] sm:text-[11px] md:text-xs text-muted-foreground">
                         {transaction.account}
                       </span>
-                      <span className="text-xs text-muted-foreground">
+                      <span className="text-[10px] sm:text-[11px] md:text-xs text-muted-foreground">
                         {new Date(transaction.date).toLocaleDateString()}
                       </span>
                       {transaction.created_by_name && (
-                        <span className="text-xs text-muted-foreground">Added by {String(transaction.created_by_name).split(" ")[0]}</span>
+                        <span className="text-[10px] sm:text-[11px] md:text-xs text-muted-foreground truncate">
+                          Added by {String(transaction.created_by_name).split(" ")[0]}
+                        </span>
                       )}
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+
+                {/* RIGHT */}
+                <div className="flex items-center gap-2 sm:gap-3 pl-2 sm:pl-3 shrink-0">
                   <div
-                    className={`text-lg font-bold ${
-                      isIncome ? "text-success" : "text-destructive"
+                    className={`font-semibold whitespace-nowrap leading-none text-lg sm:text-xl md:text-2xl ${
+                      isIncome ? "text-emerald-500" : "text-rose-400"
                     }`}
                   >
-                    {isIncome ? "+" : "-"}€
-                    {amount.toFixed(2)}
+                    {isIncome ? "+" : "-"}€{amount.toFixed(2)}
                   </div>
                   <Button
                     variant="ghost"
                     size="icon"
+                    aria-label="Delete transaction"
                     onClick={() => handleDelete(transaction.id)}
                   >
                     <Trash2 className="h-4 w-4" />
