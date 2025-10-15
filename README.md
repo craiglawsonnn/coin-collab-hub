@@ -1,73 +1,119 @@
-# Welcome to your Lovable project
+# 💰 CoinCollab — Budget Tracker (React + Supabase)
 
-## Project info
+### A modern, mobile-first personal finance app that lets you track income/expenses, filter and search transactions, and visualize trends — all backed by Supabase (auth, Postgres, RLS). Deployed as a static site on GitHub Pages.
 
-**URL**: https://lovable.dev/projects/8d5e67b6-6444-42a4-a765-538609a1a98b
+- Fast SPA built with Vite + React + TypeScript
+- Supabase for auth & database (Postgres + Row Level Security)
+- Shadcn/UI + Tailwind for a clean, dark-mode friendly UI
+- TanStack Query for data fetching/caching
+- Recharts for simple insights/graphs
+- Client-side routing via HashRouter (GitHub Pages compatible)
 
-## How can I edit this code?
+🔗 Live demo: https://craiglawsonnn.github.io/coin-collab-hub/#/
+📦 Repository: this repo
 
-There are several ways of editing your application.
+## ✨ Features
 
-**Use Lovable**
+- Transactions
+- Add, edit, delete, and filter by type, category, account, user
+- Quick search across description/category/account
+- Soft “optimistic” updates with rollback on error
+- Multi-view navigation
+- Main dashboard, transactions list, graphs, settings
+- Analytics
+- Net flow (income − expense) computed and displayed
+- Basic graphs with Recharts
+- Collaboration-ready
+- Owner-view support via ?owner=<user_id> in routes
+- Responsive UI
+- Works great on mobile; adaptive list layout for small screens
+- Robust UX
+- Toasts, loading states, and error handling throughout
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/8d5e67b6-6444-42a4-a765-538609a1a98b) and start prompting.
+## 🧱 Tech Stack
 
-Changes made via Lovable will be committed automatically to this repo.
+- Frontend: React 18, TypeScript, Vite, Tailwind, shadcn/ui, Lucide Icons
+- State/Data: TanStack Query, React Hook Form, Zod
+- Charts: Recharts
+- Backend: Supabase (Auth, Postgres, RLS)
+- Deploy: GitHub Actions → GitHub Pages (HashRouter + base)
 
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
+## ⚙️ Environment
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+Create .env (or .env.local) at the root:
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+VITE_SUPABASE_URL="https://YOUR-PROJECT.supabase.co"
+VITE_SUPABASE_PUBLISHABLE_KEY="YOUR-ANON-KEY"
 
-# Step 3: Install the necessary dependencies.
-npm i
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+In CI (GitHub Actions), set these as Repository Variables:
+VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY.
 ```
+## 🛠️ Local Development
+```sh
+# install
+npm ci
 
-**Edit a file directly in GitHub**
+# run dev server
+npm run dev
+# http://localhost:8080 (see vite.config.ts server.port)
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+# type-check + lint (optional)
+npm run lint
+```
+## 🚀 Production Build & Deploy
 
-**Use GitHub Codespaces**
+### This project is configured for GitHub Pages:
+vite.config.ts sets base: "/coin-collab-hub/"
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+App uses HashRouter so routes work on Pages
 
-## What technologies are used for this project?
+CI copies dist/index.html → dist/404.html for deep links
 
-This project is built with:
+Workflow: .github/workflows/pages.yml
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+### Manual build:
+```
+npm run build
+# preview the prod build locally
+npm run preview
 
-## How can I deploy this project?
+🧭 Project Structure (high level)
+src/
+  components/        # UI & layout
+  hooks/             # custom hooks (auth, etc.)
+  integrations/
+    supabase/        # supabase client/types
+  pages/
+    Index.tsx
+    Auth.tsx
+    Transactions.tsx
+    Graphs.tsx
+    Settings.tsx
+  App.tsx            # routes
+  main.tsx           # React root + HashRouter
+```
+## 🔒 Security & RLS
 
-Simply open [Lovable](https://lovable.dev/projects/8d5e67b6-6444-42a4-a765-538609a1a98b) and click on Share -> Publish.
+Data access is enforced via Supabase Row Level Security.
 
-## Can I connect a custom domain to my Lovable project?
+Client requests must respect authenticated user policies.
 
-Yes, you can!
+## 🗺️ Roadmap
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+- Budgets & categories management
+- Recurring transactions
+- Export/Import (CSV)
+- More charts/insights (cash-flow, burn rate, category drill-downs)
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+## 🙌 Credits
+- UI components by shadcn/ui
+- Icons by lucide-react
+- Charts by Recharts
+- Backend by Supabase
+
+## 📫 Feedback
+
+Found a bug or have a feature request?
+Open an issue or start a discussion — contributions welcome!
+
