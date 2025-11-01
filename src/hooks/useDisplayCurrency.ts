@@ -16,8 +16,11 @@ export function useDisplayCurrency() {
         .select("preferences")
         .eq("id", user.id)
         .single();
-      if (!error && data?.preferences?.display_currency) {
-        setDisplayCurrency(data.preferences.display_currency);
+      if (!error && data?.preferences) {
+        const prefs = data.preferences as Record<string, any>;
+        if (prefs?.display_currency) {
+          setDisplayCurrency(prefs.display_currency);
+        }
       }
       setLoading(false);
     })();

@@ -130,14 +130,13 @@ const Dashboard = () => {
     (balanceView.mode === "ACCOUNT" ? balanceView.currency : "EUR");
 
   // FX
-  const { rates, base, convert: fxConvert } = useFxRates();
+  const { data: fxData } = useFxRates();
 
   // Generic converter (falls back if your hook doesn’t export one)
   const convert = (amount: number, from: string, to: string) => {
-    if (fxConvert) return fxConvert(amount, from, to);
-    if (!rates || from === to) return Number(amount || 0);
+    if (!fxData || from === to) return Number(amount || 0);
 
-    // assume: 1 BASE = rates[CCY]
+    const { rates, base } = fxData;
     const rFrom = rates[from] ?? (from === base ? 1 : undefined);
     const rTo   = rates[to]   ?? (to   === base ? 1 : undefined);
     if (rFrom == null || rTo == null) return Number(amount || 0);
@@ -367,7 +366,7 @@ const Dashboard = () => {
     setIncomeTotal(income);
     setExpenseTotal(expense);
     setCurrentBalance(total);
-  }, [transactions, incomePeriod, expensePeriod, activeCurrency, rates]);
+  }, [transactions, incomePeriod, expensePeriod, activeCurrency, fxData]);
 
   const titleFor = (p: Period) =>
     p === "day" ? "This day" : p === "week" ? "This week" : p === "month" ? "This month" : "This year";
@@ -716,7 +715,7 @@ const Dashboard = () => {
                   <p className="text-sm font-medium text-muted-foreground">
                     {balanceView.mode === "ALL" ? "Current Balance" : balanceView.name}
                   </p>
-                  <AccountBalances selected={balanceView} onSelect={setBalanceView} />
+                  <AccountBalances />
                 </div>
 
                 <p className="text-3xl font-bold text-foreground">
