@@ -114,24 +114,6 @@ export default function TransactionsPage() {
 
       const txs = (data || []) as Tx[];
       setTransactions(txs);
-
-      // Resolve names for created_by / updated_by
-      const ids = Array.from(
-        new Set(txs.flatMap(t => [t.created_by, t.updated_by]).filter(Boolean) as string[])
-      );
-      if (ids.length) {
-        const { data: profs, error: pErr } = await supabase
-          .from("searchable_profiles")
-          .select("id, full_name, email")
-          .in("id", ids);
-        if (!pErr && profs) {
-          const map: Record<string, string> = {};
-          profs.forEach(p => (map[p.id] = p.full_name || p.email || p.id));
-          setNameMap(map);
-        }
-      } else {
-        setNameMap({});
-      }
     } catch (e: any) {
       toast({
         title: "Error loading transactions",
@@ -186,7 +168,6 @@ export default function TransactionsPage() {
           date: values.date ?? null,
           net_income: values.net_income ?? null,
           expense: values.expense ?? null,
-          updated_by: user?.id ?? null,       // optional audit (safe if column missing)
         })
         .eq("id", values.id)
         .eq("user_id", viewingOwnerId);
@@ -344,27 +325,12 @@ export default function TransactionsPage() {
                           </span>
                         </div>
 
-                        {/* Meta line */}
-                        {(t.created_by || t.updated_by || t.created_at || t.updated_at) && (
+                        {/* Meta line - show timestamps */}
+                        {(t.created_at || t.updated_at) && (
                           <div className="mt-1 text-[11px] sm:text-xs text-muted-foreground">
-                            {t.created_by && (
-                              <>
-                                created by{" "}
-                                <span className="font-medium">
-                                  {nameMap[t.created_by] || t.created_by}
-                                </span>
-                                {t.created_at ? ` • ${fmtDateTime(t.created_at)}` : null}
-                              </>
-                            )}
-                            {t.updated_by && (
-                              <>
-                                {t.created_by ? " — " : ""}
-                                updated by{" "}
-                                <span className="font-medium">
-                                  {nameMap[t.updated_by] || t.updated_by}
-                                </span>
-                                {t.updated_at ? ` • ${fmtDateTime(t.updated_at)}` : null}
-                              </>
+                            {t.created_at && <>Created: {fmtDateTime(t.created_at)}</>}
+                            {t.updated_at && t.created_at !== t.updated_at && (
+                              <> • Updated: {fmtDateTime(t.updated_at)}</>
                             )}
                           </div>
                         )}
