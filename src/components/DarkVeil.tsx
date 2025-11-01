@@ -20,6 +20,13 @@ type DarkVeilProps = {
   mapMode?: 0 | 1 | 2;                        // 0=tint, 1=gold-map, 2=invert-map
   mapColor?: [number, number, number];        // rgb 0..1
 
+  cover?: "parent" | "viewport";
+  /** NEW performance controls */
+  enabled?: boolean;              // render at all
+  maxDevicePixelRatio?: number;   // cap DPR (e.g. 1 for low, 2 for high)
+  targetFps?: number;             // cap FPS (e.g. 30)
+  pauseWhenHidden?: boolean;      // stop animating when tab hidden
+
   /** Deprecated, kept for compat (ignored) */
   whiteBackground?: boolean;
 };
@@ -134,12 +141,22 @@ export default function DarkVeil({
   whiteMix = 0,
   mapMode = 0,
   mapColor = [1.0, 0.84, 0.20],
+  cover = "parent",
+
+  // NEW defaults
+  enabled = true,
+  maxDevicePixelRatio = 2,
+  targetFps = 60,
+  pauseWhenHidden = true,
 }: DarkVeilProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rendererRef = useRef<Renderer | null>(null);
   const programRef = useRef<Program | null>(null);
   const rafRef = useRef<number>(0);
   const aliveRef = useRef(true);
+
+  // If disabled, render nothing (zero cost)
+  if (!enabled) return null;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -150,10 +167,13 @@ export default function DarkVeil({
 
     const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
     const effectiveSpeed = reduced ? speed * 0.6 : speed;
+    const effectiveFps = Math.max(1, reduced ? Math.min(targetFps, 30) : targetFps);
+    const minDt = 1000 / effectiveFps;
 
-    // Renderer
+   
+    // Renderer with DPR cap
     const renderer = new Renderer({
-      dpr: Math.min(window.devicePixelRatio || 1, 2),
+      dpr: Math.min(window.devicePixelRatio || 1, maxDevicePixelRatio),
       canvas,
       alpha: true,
       premultipliedAlpha: true,
@@ -195,26 +215,42 @@ export default function DarkVeil({
     const fit = () => {
       if (!rendererRef.current || !programRef.current || !canvas) return;
 
-      // CSS size of the element
-      const rect = parent.getBoundingClientRect();
-      const cssW = Math.max(1, Math.round(rect.width));
-      const cssH = Math.max(1, Math.round(rect.height));
+      let cssW = 1, cssH = 1;
 
-      // Ensure CSS size is set explicitly
+      if (cover === "viewport") {
+        // use the *window* size
+        cssW = Math.max(1, Math.round(window.innerWidth));
+        cssH = Math.max(1, Math.round(window.innerHeight));
+
+        // ensure it’s pinned to the viewport
+        canvas.style.position = "fixed";
+        canvas.style.left = "0";
+        canvas.style.top = "0";
+      } else {
+        // current behavior: follow the parent box
+        const rect = parent.getBoundingClientRect();
+        cssW = Math.max(1, Math.round(rect.width));
+        cssH = Math.max(1, Math.round(rect.height));
+
+        canvas.style.position = "absolute";
+        canvas.style.left = "0";
+        canvas.style.top = "0";
+      }
+
+      // apply CSS size
       canvas.style.width = `${cssW}px`;
       canvas.style.height = `${cssH}px`;
 
-      // Tell OGL to size the drawing buffer (it multiplies by DPR internally)
+      // back-buffer size (scaled by DPR in OGL)
       rendererRef.current.setSize(cssW * resolutionScale, cssH * resolutionScale);
 
-      // Device-pixel size (after OGL setSize)
       const devW = (canvas as HTMLCanvasElement).width;
       const devH = (canvas as HTMLCanvasElement).height;
 
-      // Update the GL viewport and shader resolution to device pixels
       gl.viewport(0, 0, devW, devH);
       (programRef.current.uniforms.uResolution.value as Vec2).set(devW, devH);
     };
+
 
     // Initial fit
     fit();
@@ -234,17 +270,33 @@ export default function DarkVeil({
     };
     window.addEventListener("resize", onWinResize, { passive: true });
 
+    // Visibility pause (optional)
+    let hidden = false;
+    const onVis = () => {
+      hidden = document.hidden && pauseWhenHidden;
+    };
+    if (pauseWhenHidden) {
+      document.addEventListener("visibilitychange", onVis);
+      hidden = document.hidden;
+    }
+
     // Render loop
     const t0 = performance.now();
+    let last = 0;
     aliveRef.current = true;
 
-    const loop = () => {
+    const loop = (ts: number) => {
       if (!aliveRef.current) return;
+      rafRef.current = requestAnimationFrame(loop);
+
+      if (hidden) return;                // skip while hidden
+      if (ts - last < minDt) return;     // FPS throttle
+      last = ts;
+
       (program.uniforms.uTime as any).value =
-        ((performance.now() - t0) / 1000) * effectiveSpeed;
+        ((ts - t0) / 1000) * effectiveSpeed;
 
       renderer.render({ scene: mesh });
-      rafRef.current = requestAnimationFrame(loop);
     };
     rafRef.current = requestAnimationFrame(loop);
 
@@ -276,6 +328,11 @@ export default function DarkVeil({
     mapColor[0],
     mapColor[1],
     mapColor[2],
+    // NEW deps
+    maxDevicePixelRatio,
+    targetFps,
+    pauseWhenHidden,
+    enabled,
   ]);
 
   return (

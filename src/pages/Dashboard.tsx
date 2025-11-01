@@ -9,7 +9,15 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 import {
-  Eye, EyeOff, Plus, TrendingUp, TrendingDown, LogOut, LayoutGrid, MoreVertical,
+  Eye,
+  EyeOff,
+  Plus,
+  TrendingUp,
+  TrendingDown,
+  LogOut,
+  LayoutGrid,
+  MoreVertical,
+  Settings as SettingsIcon,
 } from "lucide-react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import {
@@ -22,6 +30,7 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 
+import { useFxRates } from "@/hooks/useFxRates";
 import InviteToDashboard from "@/components/InviteToDashboard";
 import {
   Dialog,
@@ -30,9 +39,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
-  DialogFooter,
 } from "@/components/ui/dialog";
-import { Checkbox } from "@/components/ui/checkbox";
 import AccountBalances from "@/components/AccountBalances";
 import CreateViewForm from "@/components/CreateViewForm";
 import { TransactionForm } from "@/components/TransactionForm";
@@ -46,6 +53,10 @@ import { useAuth } from "@/hooks/useAuth";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+
+/** Currency settings */
+import { useDisplayCurrency } from "@/hooks/useDisplayCurrency";
+import DisplayCurrencyDialog from "@/components/settings/DisplayCurrencyDialog";
 
 /* Background veil + mobile flag */
 import DarkVeil from "@/components/DarkVeil";
@@ -62,11 +73,11 @@ const Dashboard = () => {
   const [showTransactionForm, setShowTransactionForm] = useState(false);
   const [currentBalance, setCurrentBalance] = useState(0);
 
-  // INDEPENDENT totals
+  // Totals (in active display currency)
   const [incomeTotal, setIncomeTotal] = useState(0);
   const [expenseTotal, setExpenseTotal] = useState(0);
 
-  // INDEPENDENT periods
+  // Periods
   const [incomePeriod, setIncomePeriod] = useState<Period>("month");
   const [expensePeriod, setExpensePeriod] = useState<Period>("month");
 
@@ -97,6 +108,10 @@ const Dashboard = () => {
       document.documentElement.classList.contains("dark")
   );
 
+  /** Currency settings */
+  const { displayCurrency, saveDisplayCurrency } = useDisplayCurrency();
+  const [currencyDialogOpen, setCurrencyDialogOpen] = useState(false);
+
   /** Which balance the main card shows (persist to localStorage) */
   const [balanceView, setBalanceView] = useState<BalanceView>(() => {
     try {
@@ -108,6 +123,48 @@ const Dashboard = () => {
   useEffect(() => {
     localStorage.setItem("balance:main", JSON.stringify(balanceView));
   }, [balanceView]);
+
+  /** The currency we’ll use everywhere when rendering money */
+  const activeCurrency =
+    displayCurrency ||
+    (balanceView.mode === "ACCOUNT" ? balanceView.currency : "EUR");
+
+  // FX
+  const { rates, base, convert: fxConvert } = useFxRates();
+
+  // Generic converter (falls back if your hook doesn’t export one)
+  const convert = (amount: number, from: string, to: string) => {
+    if (fxConvert) return fxConvert(amount, from, to);
+    if (!rates || from === to) return Number(amount || 0);
+
+    // assume: 1 BASE = rates[CCY]
+    const rFrom = rates[from] ?? (from === base ? 1 : undefined);
+    const rTo   = rates[to]   ?? (to   === base ? 1 : undefined);
+    if (rFrom == null || rTo == null) return Number(amount || 0);
+
+    const inBase = Number(amount || 0) / rFrom;
+    return inBase * rTo;
+  };
+
+  // Detect a tx’s currency (adjust keys if yours differ)
+  const txCurrency = (t: any) =>
+    t.currency_code || t.currency || t.account_currency || "EUR";
+
+  // Convenience
+  const toActive = (amt: number, fromCur: string) =>
+    convert(amt, fromCur, activeCurrency);
+
+  // Show/hide the DarkVeil background
+  const [veilEnabled, setVeilEnabled] = useState<boolean>(() => {
+    const saved = localStorage.getItem("ui:veilEnabled");
+    if (saved != null) return saved === "1";
+    const reduce =
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    return !reduce;
+  });
+  useEffect(() => {
+    localStorage.setItem("ui:veilEnabled", veilEnabled ? "1" : "0");
+  }, [veilEnabled]);
 
   // ------- NEW: monthly overall budget state -------
   const [monthlyBudget, setMonthlyBudget] = useState<{
@@ -142,7 +199,7 @@ const Dashboard = () => {
     } catch (err: any) {
       toast({
         title: "Error saving preferences",
-        description: err.message || String(err),
+        description: err.message,
         variant: "destructive",
       });
     }
@@ -184,8 +241,12 @@ const Dashboard = () => {
           setShowBalanceCard(Boolean(prefs.cards.showBalanceCard ?? true));
           setShowIncomeCard(Boolean(prefs.cards.showIncomeCard ?? true));
           setShowExpensesCard(Boolean(prefs.cards.showExpensesCard ?? true));
-          setShowMonthlySummaryCard(Boolean(prefs.cards.showMonthlySummaryCard ?? true));
-          setShowAdjustmentsCard(Boolean(prefs.cards.showAdjustmentsCard ?? true));
+          setShowMonthlySummaryCard(
+            Boolean(prefs.cards.showMonthlySummaryCard ?? true)
+          );
+          setShowAdjustmentsCard(
+            Boolean(prefs.cards.showAdjustmentsCard ?? true)
+          );
         }
         if (prefs.customViews && Array.isArray(prefs.customViews)) {
           setCustomViews(prefs.customViews);
@@ -260,9 +321,9 @@ const Dashboard = () => {
     return false;
   };
 
+  /** Fetch + set transactions only. All totals are recomputed in a separate effect. */
   const fetchDashboardData = async () => {
     try {
-      // Filter transactions by the owner we're viewing
       const { data, error } = await supabase
         .from("transactions")
         .select("*")
@@ -270,22 +331,7 @@ const Dashboard = () => {
         .order("date", { ascending: false });
       if (error) throw error;
 
-      const tx = (data as any[]) || [];
-      setTransactions(tx);
-
-      // Balance = total net_flow overall (major units)
-      const totalBalance = tx.reduce((sum, t) => sum + Number(t.net_flow || 0), 0);
-      setCurrentBalance(totalBalance);
-
-      // Income uses incomePeriod
-      const incomeTx = tx.filter((t) => inPeriod(t.date, incomePeriod));
-      const income = incomeTx.reduce((s, t) => s + Number(t.net_income || 0), 0);
-      setIncomeTotal(income);
-
-      // Expenses use expensePeriod
-      const expenseTx = tx.filter((t) => inPeriod(t.date, expensePeriod));
-      const expense = expenseTx.reduce((s, t) => s + Number(t.expense || 0), 0);
-      setExpenseTotal(expense);
+      setTransactions((data as any[]) || []);
     } catch (error: any) {
       toast({
         title: "Error fetching data",
@@ -295,26 +341,40 @@ const Dashboard = () => {
     }
   };
 
-  const titleFor = (p: Period) =>
-    p === "day"
-      ? "This day"
-      : p === "week"
-      ? "This week"
-      : p === "month"
-      ? "This month"
-      : "This year";
+  /** Recompute totals whenever tx/period/currency/rates change */
+  useEffect(() => {
+    if (!transactions.length) {
+      setIncomeTotal(0);
+      setExpenseTotal(0);
+      setCurrentBalance(0);
+      return;
+    }
 
-  // local apply for a single inserted transaction row (if provided)
+    // Income — sum in activeCurrency for the selected period
+    const income = transactions
+      .filter((t) => inPeriod(t.date, incomePeriod))
+      .reduce((s, t) => s + toActive(Number(t.net_income || 0), txCurrency(t)), 0);
+
+    // Expenses — sum in activeCurrency for the selected period
+    const expense = transactions
+      .filter((t) => inPeriod(t.date, expensePeriod))
+      .reduce((s, t) => s + toActive(Number(t.expense || 0), txCurrency(t)), 0);
+
+    // Overall balance — sum all net_flow in activeCurrency
+    const total = transactions
+      .reduce((s, t) => s + toActive(Number(t.net_flow || 0), txCurrency(t)), 0);
+
+    setIncomeTotal(income);
+    setExpenseTotal(expense);
+    setCurrentBalance(total);
+  }, [transactions, incomePeriod, expensePeriod, activeCurrency, rates]);
+
+  const titleFor = (p: Period) =>
+    p === "day" ? "This day" : p === "week" ? "This week" : p === "month" ? "This month" : "This year";
+
+  // Local insert: we just push the tx; the recompute effect will update totals
   const applyLocalTx = (tx: any) => {
     setTransactions((prev) => [tx, ...prev]);
-    setCurrentBalance((prev) => prev + Number(tx.net_flow || 0));
-
-    if (inPeriod(tx.date, incomePeriod)) {
-      setIncomeTotal((prev) => prev + Number(tx.net_income || 0));
-    }
-    if (inPeriod(tx.date, expensePeriod)) {
-      setExpenseTotal((prev) => prev + Number(tx.expense || 0));
-    }
   };
 
   // after balance adjustment
@@ -331,6 +391,8 @@ const Dashboard = () => {
   const handleTransactionAddedWithRefresh = (tx?: any) => {
     setShowTransactionForm(false);
     setRefreshToken((r) => r + 1);
+    if (tx) applyLocalTx(tx);
+    else fetchDashboardData();
   };
 
   // ---- EARLY RETURNS MUST COME AFTER ALL HOOKS ----
@@ -345,17 +407,19 @@ const Dashboard = () => {
 
   const anyHidden = !showBalanceCard || !showIncomeCard || !showExpensesCard;
 
-  /** Compute what the main card should show (no hooks) */
+  /** Compute what the main card should show (converted if a single account is selected) */
   const displayBalance =
     balanceView.mode === "ALL"
       ? currentBalance
       : transactions
           .filter((t) => t.account === balanceView.name)
-          .reduce((s, t) => s + Number(t.net_flow || 0), 0);
+          .reduce((s, t) => s + toActive(Number(t.net_flow || 0), txCurrency(t)), 0);
 
-  /** Money formatter (uses account currency if a single account is selected) */
+  /** Money formatter */
   const fmtMoney = (amount: number, currency = "EUR") =>
-    new Intl.NumberFormat(undefined, { style: "currency", currency }).format(amount);
+    new Intl.NumberFormat(undefined, { style: "currency", currency }).format(
+      amount
+    );
 
   return (
     <LeftNav>
@@ -371,11 +435,15 @@ const Dashboard = () => {
               ].join(" ")}
               style={
                 !isDark
-                  ? { filter: "invert(1) hue-rotate(240deg) saturate(1.8) brightness(0.75)" }
+                  ? {
+                      filter:
+                        "invert(1) hue-rotate(240deg) saturate(1.8) brightness(0.75)",
+                    }
                   : undefined
               }
             >
               <DarkVeil
+                cover="viewport"
                 className="h-full w-full"
                 hueShift={1}
                 noiseIntensity={0.03}
@@ -383,8 +451,13 @@ const Dashboard = () => {
                 scanlineFrequency={2.8}
                 speed={isMobile ? 0.35 : 0.5}
                 warpAmount={0.08}
-                resolutionScale={isMobile ? 0.75 : 1}
                 opacity={0.26}
+                /* Performance */
+                enabled={veilEnabled}
+                resolutionScale={isMobile ? 0.5 : 0.75}
+                maxDevicePixelRatio={1}
+                targetFps={30}
+                pauseWhenHidden={true}
               />
             </div>
 
@@ -423,7 +496,11 @@ const Dashboard = () => {
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" size="icon" aria-label="Show/Hide cards">
-                      {anyHidden ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                      {anyHidden ? (
+                        <EyeOff className="h-5 w-5" />
+                      ) : (
+                        <Eye className="h-5 w-5" />
+                      )}
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-56">
@@ -478,6 +555,16 @@ const Dashboard = () => {
                 </DropdownMenu>
 
                 <ThemeToggle />
+
+                {/* Currency settings */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  title="Display currency options"
+                  onClick={() => setCurrencyDialogOpen(true)}
+                >
+                  <SettingsIcon className="h-5 w-5" />
+                </Button>
 
                 <Dialog>
                   <DialogTrigger asChild>
@@ -633,13 +720,12 @@ const Dashboard = () => {
                 </div>
 
                 <p className="text-3xl font-bold text-foreground">
-                  {fmtMoney(
-                    displayBalance,
-                    balanceView.mode === "ACCOUNT" ? balanceView.currency : "EUR"
-                  )}
+                  {fmtMoney(displayBalance, activeCurrency)}
                 </p>
                 <p className="text-xs text-muted-foreground mt-2">
-                  {balanceView.mode === "ALL" ? "All accounts combined" : `Only ${balanceView.name}`}
+                  {balanceView.mode === "ALL"
+                    ? "All accounts combined"
+                    : `Only ${balanceView.name}`}
                 </p>
 
                 <div className="mt-3">
@@ -654,11 +740,13 @@ const Dashboard = () => {
             {showIncomeCard && (
               <Card className="p-6 bg-gradient-to-br from-success/10 to-success/5 shadow-lg hover:shadow-xl transition-shadow border-success/20">
                 <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm font-medium text-success">{titleFor(incomePeriod)} Income</p>
+                  <p className="text-sm font-medium text-success">
+                    {titleFor(incomePeriod)} Income
+                  </p>
                   <TrendingUp className="h-5 w-5 text-success" />
                 </div>
                 <p className="text-3xl font-bold text-success">
-                  {fmtMoney(incomeTotal, "EUR")}
+                  {fmtMoney(incomeTotal, activeCurrency)}
                 </p>
                 <p className="text-xs text-success/70 mt-2">{titleFor(incomePeriod)}</p>
                 <div className="mt-3 w-full max-w-[9.5rem] self-start">
@@ -689,11 +777,13 @@ const Dashboard = () => {
             {showExpensesCard && (
               <Card className="p-6 bg-gradient-to-br from-destructive/10 to-destructive/5 shadow-lg hover:shadow-xl transition-shadow border-destructive/20">
                 <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm font-medium text-destructive">{titleFor(expensePeriod)} Expenses</p>
+                  <p className="text-sm font-medium text-destructive">
+                    {titleFor(expensePeriod)} Expenses
+                  </p>
                   <TrendingDown className="h-5 w-5 text-destructive" />
                 </div>
                 <p className="text-3xl font-bold text-destructive">
-                  {fmtMoney(expenseTotal, "EUR")}
+                  {fmtMoney(expenseTotal, activeCurrency)}
                 </p>
                 <p className="text-xs text-destructive/70 mt-2">{titleFor(expensePeriod)}</p>
 
@@ -712,8 +802,8 @@ const Dashboard = () => {
                           <div className="flex items-center justify-between text-xs text-destructive/80">
                             <span>Budget</span>
                             <span className="tabular-nums">
-                              {fmtMoney(spent, monthlyBudget.currency)} / {fmtMoney(budget, monthlyBudget.currency)}{" "}
-                              ({Math.round(pct)}%)
+                              {fmtMoney(spent, monthlyBudget.currency)} /{" "}
+                              {fmtMoney(budget, monthlyBudget.currency)} ({Math.round(pct)}%)
                             </span>
                           </div>
                           <div className="mt-1 h-2 rounded-full bg-destructive/20 overflow-hidden">
@@ -788,27 +878,13 @@ const Dashboard = () => {
         )}
       </div>
 
-      {/* DEBUG overlay */}
-      <div
-        style={{
-          position: "fixed",
-          right: 8,
-          bottom: 8,
-          zIndex: 99999,
-          fontSize: 12,
-          padding: "6px 8px",
-          borderRadius: 6,
-          background: "rgba(0,0,0,0.7)",
-          color: "white",
-          fontFamily:
-            "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
-          pointerEvents: "none",
-        }}
-      >
-        isDark: {String(isDark)}
-        <br />
-        html.class: {typeof document !== "undefined" ? document.documentElement.className : "(ssr)"}
-      </div>
+      {/* Currency dialog lives at the root so it overlays everything */}
+      <DisplayCurrencyDialog
+        open={currencyDialogOpen}
+        onOpenChange={setCurrencyDialogOpen}
+        initial={displayCurrency ?? "EUR"}
+        onSave={saveDisplayCurrency}
+      />
     </LeftNav>
   );
 };
