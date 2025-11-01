@@ -23,6 +23,7 @@ import { AccountsSettings } from "@/components/settings/AccountsSettings";
 import { CategoriesSettings } from "@/components/settings/CategoriesSettings";
 import { RecurringTransactions } from "@/components/settings/RecurringTransactions";
 import Budgets from "@/components/settings/Budgets";
+import { PasswordSettings } from "@/components/settings/PasswordSettings";
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -60,11 +61,12 @@ export default function Settings() {
       {/* Page body */}
       <main className="w-full px-4 py-6">
         <Tabs defaultValue="accounts" className="w-full">
-          <TabsList className="grid w-full max-w-xl grid-cols-4">
+          <TabsList className="grid w-full max-w-xl grid-cols-5">
             <TabsTrigger value="accounts">Accounts</TabsTrigger>
             <TabsTrigger value="categories">Categories</TabsTrigger>
             <TabsTrigger value="recurring">Recurring</TabsTrigger>
             <TabsTrigger value="budgets">Budgets</TabsTrigger>
+            <TabsTrigger value="security">Security</TabsTrigger>
           </TabsList>
 
           <TabsContent value="accounts" className="mt-6">
@@ -121,6 +123,10 @@ export default function Settings() {
                 <Budgets />
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="security" className="mt-6">
+            <PasswordSettings />
           </TabsContent>
         </Tabs>
       </main>

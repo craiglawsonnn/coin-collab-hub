@@ -83,6 +83,39 @@ const Auth = () => {
     }
   };
 
+  const handleResetPassword = async () => {
+    if (!email) {
+      toast({
+        title: "Email required",
+        description: "Please enter your email address first",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/auth`,
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Check your email",
+        description: "We've sent you a password reset link",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Mobile-friendly tuning
   const raysColor = raysTheme === "dark" ? "#00ffff" : "#ffb86b"; // cyan vs warm orange
   const rayLength = isMobile ? 0.9 : 1.2;       // shorter rays on mobile to save GPU
@@ -186,6 +219,19 @@ const Auth = () => {
                   {loading ? "Loading..." : isLogin ? "Sign In" : "Sign Up"}
                 </Button>
               </form>
+
+              {isLogin && (
+                <div className="mt-3 text-center">
+                  <button
+                    type="button"
+                    onClick={handleResetPassword}
+                    disabled={loading}
+                    className="text-sm text-muted-foreground hover:text-primary hover:underline"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
+              )}
 
               <div className="mt-4 text-center text-sm">
                 <button
