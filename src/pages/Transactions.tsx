@@ -81,6 +81,17 @@ export default function TransactionsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sort, direction, page, viewingOwnerId]);
 
+  // Auto-open edit dialog if edit param is present
+  useEffect(() => {
+    const editId = searchParams.get("edit");
+    if (editId && transactions.length > 0) {
+      const txToEdit = transactions.find(t => t.id === editId);
+      if (txToEdit) {
+        setEditing(txToEdit);
+      }
+    }
+  }, [searchParams, transactions]);
+
   const fmtAmount = (n: number, currency = "EUR") =>
     new Intl.NumberFormat(undefined, { style: "currency", currency }).format(n);
 
@@ -144,6 +155,14 @@ export default function TransactionsPage() {
   function openEdit(t: Tx) {
     if (!isOwn) return;
     setEditing(t);
+  }
+
+  function closeEdit() {
+    setEditing(null);
+    // Remove edit param from URL
+    const params = new URLSearchParams(searchParams);
+    params.delete("edit");
+    navigate({ search: params.toString() }, { replace: true });
   }
 
   // Save WITHOUT sending net_flow (DB computes it)
@@ -396,7 +415,7 @@ export default function TransactionsPage() {
 
         {/* Edit dialog */}
         {editing && (
-          <EditTransactionDialog tx={editing} onClose={() => setEditing(null)} onSave={saveEdit} />
+          <EditTransactionDialog tx={editing} onClose={closeEdit} onSave={saveEdit} />
         )}
 
         {/* Delete confirm */}
