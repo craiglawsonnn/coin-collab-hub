@@ -153,13 +153,11 @@ const Dashboard = () => {
   const toActive = (amt: number, fromCur: string) =>
     convert(amt, fromCur, activeCurrency);
 
-  // Show/hide the DarkVeil background
+  // Show/hide the DarkVeil background - default to false for performance
   const [veilEnabled, setVeilEnabled] = useState<boolean>(() => {
     const saved = localStorage.getItem("ui:veilEnabled");
     if (saved != null) return saved === "1";
-    const reduce =
-      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-    return !reduce;
+    return false; // Default to static background for better performance
   });
   useEffect(() => {
     localStorage.setItem("ui:veilEnabled", veilEnabled ? "1" : "0");
@@ -424,51 +422,63 @@ const Dashboard = () => {
     <LeftNav>
       {/* page shell */}
       <div className="relative min-h-screen bg-background overflow-hidden">
-        {/* Background (behind everything on the page) */}
+        {/* Background - static image by default, animated veil when enabled */}
         <div className="fixed inset-0 z-0 pointer-events-none">
           <div className="absolute inset-0 isolate">
-            <div
-              className={[
-                "absolute inset-0 will-change-[filter,opacity] transition-[filter,opacity] duration-300",
-                !isDark ? "opacity-95" : "opacity-100",
-              ].join(" ")}
-              style={
-                !isDark
-                  ? {
-                      filter:
-                        "invert(1) hue-rotate(240deg) saturate(1.8) brightness(0.75)",
-                    }
-                  : undefined
-              }
-            >
-              <DarkVeil
-                cover="viewport"
-                className="h-full w-full"
-                hueShift={1}
-                noiseIntensity={0.03}
-                scanlineIntensity={0.06}
-                scanlineFrequency={2.8}
-                speed={isMobile ? 0.35 : 0.5}
-                warpAmount={0.08}
-                opacity={0.26}
-                /* Performance */
-                enabled={veilEnabled}
-                resolutionScale={isMobile ? 0.5 : 0.75}
-                maxDevicePixelRatio={1}
-                targetFps={30}
-                pauseWhenHidden={true}
-              />
-            </div>
-
-            {!isDark && (
+            {veilEnabled ? (
+              <>
+                <div
+                  className={[
+                    "absolute inset-0 will-change-[filter,opacity] transition-[filter,opacity] duration-300",
+                    !isDark ? "opacity-95" : "opacity-100",
+                  ].join(" ")}
+                  style={
+                    !isDark
+                      ? {
+                          filter:
+                            "invert(1) hue-rotate(240deg) saturate(1.8) brightness(0.75)",
+                        }
+                      : undefined
+                  }
+                >
+                  <DarkVeil
+                    cover="viewport"
+                    className="h-full w-full"
+                    hueShift={1}
+                    noiseIntensity={0.03}
+                    scanlineIntensity={0.06}
+                    scanlineFrequency={2.8}
+                    speed={isMobile ? 0.35 : 0.5}
+                    warpAmount={0.08}
+                    opacity={0.26}
+                    enabled={true}
+                    resolutionScale={isMobile ? 0.5 : 0.75}
+                    maxDevicePixelRatio={1}
+                    targetFps={30}
+                    pauseWhenHidden={true}
+                  />
+                </div>
+                {!isDark && (
+                  <div
+                    className="absolute inset-0 pointer-events-none transition-opacity duration-300"
+                    style={{
+                      mixBlendMode: "screen",
+                      opacity: 0.45,
+                      background:
+                        "radial-gradient(120% 90% at 15% 0%, rgba(20,184,166,.20) 0%, transparent 60%)," +
+                        "radial-gradient(110% 80% at 85% 20%, rgba(147,51,234,.16) 0%, transparent 65%)",
+                    }}
+                  />
+                )}
+              </>
+            ) : (
               <div
-                className="absolute inset-0 pointer-events-none transition-opacity duration-300"
+                className="absolute inset-0 bg-cover bg-center bg-no-repeat transition-opacity duration-300"
                 style={{
-                  mixBlendMode: "screen",
-                  opacity: 0.45,
-                  background:
-                    "radial-gradient(120% 90% at 15% 0%, rgba(20,184,166,.20) 0%, transparent 60%)," +
-                    "radial-gradient(110% 80% at 85% 20%, rgba(147,51,234,.16) 0%, transparent 65%)",
+                  backgroundImage: isDark
+                    ? `url(${require("@/assets/background.png")})`
+                    : `url(${require("@/assets/backgroundLight.png")})`,
+                  opacity: 0.6,
                 }}
               />
             )}
