@@ -11,6 +11,8 @@ import LightRays from "@/components/LightRays";
 import { motion } from "framer-motion";
 import { Sun, Moon } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
+import backgroundDark from "@/assets/background.png";
+import backgroundLight from "@/assets/backgroundLight.png";
 
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -21,6 +23,12 @@ const Auth = () => {
 
   // rays color follows global theme
   const [raysTheme, setRaysTheme] = useState<"dark" | "light">("dark");
+
+  // Animated background toggle - default to false for performance
+  const [animatedBg, setAnimatedBg] = useState<boolean>(() => {
+    const saved = localStorage.getItem("ui:veilEnabled");
+    return saved === "1";
+  });
 
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -123,25 +131,35 @@ const Auth = () => {
 
   return (
     <div className="relative min-h-screen w-full overflow-hidden bg-neutral-950">
-      {/* Light rays background — Framer Motion fade-in */}
+      {/* Background - static image by default, animated rays when enabled */}
       <motion.div
         className="absolute inset-0"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 1.2, ease: "easeOut" }}
       >
-        <LightRays
-          className="absolute inset-0"
-          raysOrigin="top-center"
-          raysColor={raysColor}
-          raysSpeed={1.5}
-          lightSpread={0.8}
-          rayLength={rayLength}
-          followMouse={true}
-          mouseInfluence={mouseInfluence}
-          noiseAmount={0.08}
-          distortion={0.04}
-        />
+        {animatedBg ? (
+          <LightRays
+            className="absolute inset-0"
+            raysOrigin="top-center"
+            raysColor={raysColor}
+            raysSpeed={1.5}
+            lightSpread={0.8}
+            rayLength={rayLength}
+            followMouse={true}
+            mouseInfluence={mouseInfluence}
+            noiseAmount={0.08}
+          />
+        ) : (
+          <div
+            className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+            style={{
+              backgroundImage:
+                raysTheme === "dark" ? `url(${backgroundDark})` : `url(${backgroundLight})`,
+              opacity: raysTheme === "light" ? 0.6 : 0.8,
+            }}
+          />
+        )}
       </motion.div>
 
       {/* Soft overlay gradient — Tailwind keyframe fade-in (from your tailwind.config.ts) */}
