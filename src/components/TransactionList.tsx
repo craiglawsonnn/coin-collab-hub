@@ -453,7 +453,8 @@ useEffect(() => {
             return (
               <div
                 key={t.id}
-                className="flex items-center justify-between rounded-xl border bg-card/60 hover:bg-card transition-colors p-3 sm:p-4 md:p-5"
+                className="flex items-center justify-between rounded-xl border bg-card/60 hover:bg-card transition-colors p-3 sm:p-4 md:p-5 cursor-pointer"
+                onClick={() => navigate(`/transactions?edit=${t.id}`)}
               >
                 {/* LEFT */}
                 <div className="flex items-start gap-3 sm:gap-4 min-w-0">
@@ -517,7 +518,10 @@ useEffect(() => {
                     variant="ghost"
                     size="icon"
                     aria-label="Delete transaction"
-                    onClick={() => handleDelete(t.id)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(t.id);
+                    }}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
