@@ -11,6 +11,7 @@ import NotFound from "./pages/NotFound";
 import TransactionsPage from "./pages/Transactions";
 import Graphs from "./pages/Graphs";
 import Settings from "./pages/Settings";
+import Admin from "./pages/Admin";
 
 const queryClient = new QueryClient();
 
@@ -28,6 +29,8 @@ const App = () => (
             <Route path="/transactions" element={<TransactionsPage />} />
             <Route path="/graphs" element={<Graphs />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/admin" element={<Admin />} />
+            <Route path="/admin/:tableName" element={<Admin />} />
             {/* keep the catch-all at the end */}
             <Route path="*" element={<NotFound />} />
           </Routes>
