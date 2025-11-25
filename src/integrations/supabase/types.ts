@@ -406,6 +406,27 @@ export type Database = {
         }
         Relationships: []
       }
+      user_roles: {
+        Row: {
+          created_at: string | null
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       searchable_profiles: {
@@ -432,10 +453,19 @@ export type Database = {
         Args: { _base: string; _on: string; _quote: string }
         Returns: number
       }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
+      is_admin: { Args: never; Returns: boolean }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
     }
     Enums: {
+      app_role: "admin" | "user"
       dashboard_invite_status: "pending" | "accepted" | "rejected"
       dashboard_role: "viewer" | "editor" | "admin"
       recurrence_frequency:
@@ -572,6 +602,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      app_role: ["admin", "user"],
       dashboard_invite_status: ["pending", "accepted", "rejected"],
       dashboard_role: ["viewer", "editor", "admin"],
       recurrence_frequency: [
